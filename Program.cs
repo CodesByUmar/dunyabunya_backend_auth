@@ -68,6 +68,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+
 // Render kabi hostinglar PORT environment variable beradi
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5070";
 app.Run($"http://0.0.0.0:{port}");
