@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Text;
 using AuthApi.Data;
 using AuthApi.Models;
+using AuthApi.Services;
 
 namespace AuthApi.Controllers;
 
@@ -16,11 +17,19 @@ public class AuthController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
+    private readonly IPhoneNormalizerService _phoneNormalizer;
+    private readonly IOdooService _odooService;
 
-    public AuthController(AppDbContext db, IConfiguration config)
+    public AuthController(
+        AppDbContext db,
+        IConfiguration config,
+        IPhoneNormalizerService phoneNormalizer,
+        IOdooService odooService)
     {
         _db = db;
         _config = config;
+        _phoneNormalizer = phoneNormalizer;
+        _odooService = odooService;
     }
 
     [HttpPost("register")]
@@ -31,14 +40,28 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Bu email allaqachon ro'yxatdan o'tgan." });
         }
 
+        if (!_phoneNormalizer.TryNormalize(dto.PhoneNumber, out var normalizedPhone))
+        {
+            return BadRequest(new { message = "Telefon raqam formati noto'g'ri." });
+        }
+
+        if (await _db.Users.AnyAsync(u => u.PhoneNumber == normalizedPhone))
+        {
+            return BadRequest(new { message = "Bu telefon raqam allaqachon ro'yxatdan o'tgan." });
+        }
+
         var user = new User
         {
             FirstName = dto.FirstName,
             LastName = dto.LastName,
             Email = dto.Email,
-            PhoneNumber = dto.PhoneNumber,
+            PhoneNumber = normalizedPhone,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password)
         };
+
+        // Odoo hali ulanmagan bo'lsa ham xavfsiz - NoOpOdooService null qaytaradi
+        user.OdooPartnerId = await _odooService.GetOrCreatePartnerAsync(
+            $"{dto.FirstName} {dto.LastName}", normalizedPhone, dto.Email);
 
         _db.Users.Add(user);
         await _db.SaveChangesAsync();
@@ -63,13 +86,26 @@ public class AuthController : ControllerBase
 
     [Authorize]
     [HttpGet("me")]
-    public IActionResult Me()
+    public async Task<IActionResult> Me()
     {
-        var email = User.FindFirstValue(ClaimTypes.Email);
-        var firstName = User.FindFirstValue(ClaimTypes.GivenName);
-        var lastName = User.FindFirstValue(ClaimTypes.Surname);
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!int.TryParse(userIdStr, out var userId))
+        {
+            return Unauthorized();
+        }
 
-        return Ok(new { firstName, lastName, email, message = "Token to'g'ri ishlayapti!" });
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return NotFound();
+
+        return Ok(new
+        {
+            id = user.Id,
+            email = user.Email,
+            firstName = user.FirstName,
+            lastName = user.LastName,
+            phoneNumber = user.PhoneNumber,
+            odooPartnerId = user.OdooPartnerId
+        });
     }
 
     [HttpPost("refresh")]
@@ -189,7 +225,7 @@ public class AuthController : ControllerBase
                 Encoding.UTF8.GetBytes(_config["Jwt:Key"]!)),
             ValidIssuer = _config["Jwt:Issuer"],
             ValidAudience = _config["Jwt:Audience"],
-            ValidateLifetime = false // Muddati tugagan tokenni ham o'qish uchun
+            ValidateLifetime = false
         };
 
         var tokenHandler = new JwtSecurityTokenHandler();
