@@ -19,22 +19,30 @@ public class AuthController : ControllerBase
     private readonly IConfiguration _config;
     private readonly IPhoneNormalizerService _phoneNormalizer;
     private readonly IOdooService _odooService;
+    private readonly IEmailDomainValidatorService _emailDomainValidator;
 
     public AuthController(
         AppDbContext db,
         IConfiguration config,
         IPhoneNormalizerService phoneNormalizer,
-        IOdooService odooService)
+        IOdooService odooService,
+        IEmailDomainValidatorService emailDomainValidator)
     {
         _db = db;
         _config = config;
         _phoneNormalizer = phoneNormalizer;
         _odooService = odooService;
+        _emailDomainValidator = emailDomainValidator;
     }
 
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
     {
+        if (!await _emailDomainValidator.HasValidMailServerAsync(dto.Email))
+        {
+            return BadRequest(new { message = "Bu email manzili mavjud emas yoki xat qabul qila olmaydi." });
+        }
+
         if (await _db.Users.AnyAsync(u => u.Email == dto.Email))
         {
             return BadRequest(new { message = "Bu email allaqachon ro'yxatdan o'tgan." });

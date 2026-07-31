@@ -12,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 // --- Services ---
 
 builder.Services.AddScoped<IPhoneNormalizerService, PhoneNormalizerService>();
+builder.Services.AddScoped<IEmailDomainValidatorService, EmailDomainValidatorService>();
 builder.Services.AddScoped<IOdooService, NoOpOdooService>(); // Odoo tayyor bo'lganda shu qatorni almashtirasiz
 // DbContext (PostgreSQL)
 builder.Services.AddDbContext<AppDbContext>(options =>
