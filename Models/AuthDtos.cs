@@ -1,6 +1,5 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 namespace AuthApi.Models;
-
 
 public class RegisterDto
 {
@@ -15,13 +14,13 @@ public class RegisterDto
     [Required, MinLength(6)]
     public string Password { get; set; } = string.Empty;
 }
-
 public class LoginDto
 {
-    public string Email { get; set; } = string.Empty;
+    [Required]
+    public string EmailOrPhone { get; set; } = string.Empty;
+    [Required]
     public string Password { get; set; } = string.Empty;
 }
-
 public class AuthResponseDto
 {
     public string Token { get; set; } = string.Empty;
@@ -29,11 +28,28 @@ public class AuthResponseDto
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
 }
 
-// Yangi DTO — refresh endpointi uchun
+public class GoogleLoginDto
+{
+    [Required]
+    public string IdToken { get; set; } = string.Empty;
+}
+
 public class RefreshRequestDto
 {
-    public string Token { get; set; } = string.Empty;        // eski (muddati o'tgan bo'lishi mumkin) access token
+    public string Token { get; set; } = string.Empty;
     public string RefreshToken { get; set; } = string.Empty;
+}
+
+public class ForgotPasswordDto
+{
+    public string Email { get; set; } = string.Empty;
+}
+
+public class ResetPasswordDto
+{
+    public string Token { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
 }

@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -8,6 +8,7 @@ using System.Text;
 using AuthApi.Data;
 using AuthApi.Models;
 using AuthApi.Services;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AuthApi.Controllers;
 
@@ -20,30 +21,36 @@ public class AuthController : ControllerBase
     private readonly IPhoneNormalizerService _phoneNormalizer;
     private readonly IOdooService _odooService;
     private readonly IEmailDomainValidatorService _emailDomainValidator;
+    private readonly IEmailService _emailService;
 
     public AuthController(
         AppDbContext db,
         IConfiguration config,
         IPhoneNormalizerService phoneNormalizer,
         IOdooService odooService,
-        IEmailDomainValidatorService emailDomainValidator)
+        IEmailDomainValidatorService emailDomainValidator,
+        IEmailService emailService)
     {
         _db = db;
         _config = config;
         _phoneNormalizer = phoneNormalizer;
         _odooService = odooService;
         _emailDomainValidator = emailDomainValidator;
+        _emailService = emailService;
     }
 
+    [EnableRateLimiting("AuthPolicy")]
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
     {
-        if (!await _emailDomainValidator.HasValidMailServerAsync(dto.Email))
+        var normalizedEmail = NormalizeEmail(dto.Email);
+
+        if (!await _emailDomainValidator.HasValidMailServerAsync(normalizedEmail))
         {
             return BadRequest(new { message = "Bu email manzili mavjud emas yoki xat qabul qila olmaydi." });
         }
 
-        if (await _db.Users.AnyAsync(u => u.Email == dto.Email))
+        if (await _db.Users.AnyAsync(u => u.Email == normalizedEmail))
         {
             return BadRequest(new { message = "Bu email allaqachon ro'yxatdan o'tgan." });
         }
@@ -62,14 +69,14 @@ public class AuthController : ControllerBase
         {
             FirstName = dto.FirstName,
             LastName = dto.LastName,
-            Email = dto.Email,
+            Email = normalizedEmail,
             PhoneNumber = normalizedPhone,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password)
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+            Role = "Customer"
         };
 
-        // Odoo hali ulanmagan bo'lsa ham xavfsiz - NoOpOdooService null qaytaradi
         user.OdooPartnerId = await _odooService.GetOrCreatePartnerAsync(
-            $"{dto.FirstName} {dto.LastName}", normalizedPhone, dto.Email);
+            $"{dto.FirstName} {dto.LastName}", normalizedPhone, normalizedEmail);
 
         _db.Users.Add(user);
         await _db.SaveChangesAsync();
@@ -78,14 +85,74 @@ public class AuthController : ControllerBase
         return Ok(response);
     }
 
+    [EnableRateLimiting("AuthPolicy")]
+    [HttpPost("google-login")]
+    public async Task<ActionResult<AuthResponseDto>> GoogleLogin(GoogleLoginDto dto)
+    {
+        Google.Apis.Auth.GoogleJsonWebSignature.Payload payload;
+        try
+        {
+            var settings = new Google.Apis.Auth.GoogleJsonWebSignature.ValidationSettings
+            {
+                Audience = new[] { _config["Google:ClientId"] }
+            };
+            payload = await Google.Apis.Auth.GoogleJsonWebSignature.ValidateAsync(dto.IdToken, settings);
+        }
+        catch (Google.Apis.Auth.InvalidJwtException)
+        {
+            return Unauthorized(new { message = "Google tokeni noto'g'ri yoki muddati tugagan." });
+        }
+
+        var normalizedEmail = NormalizeEmail(payload.Email);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
+
+        if (user == null)
+        {
+            user = new User
+            {
+                FirstName = payload.GivenName ?? "",
+                LastName = payload.FamilyName ?? "",
+                Email = normalizedEmail,
+                PhoneNumber = "",
+                PasswordHash = null,
+                AuthProvider = "google",
+                Role = "Customer"
+            };
+
+            user.OdooPartnerId = await _odooService.GetOrCreatePartnerAsync(
+                $"{user.FirstName} {user.LastName}", user.PhoneNumber, normalizedEmail);
+
+            _db.Users.Add(user);
+            await _db.SaveChangesAsync();
+        }
+
+        var response = await GenerateAuthResponse(user);
+        return Ok(response);
+    }
+
+    [EnableRateLimiting("AuthPolicy")]
     [HttpPost("login")]
     public async Task<ActionResult<AuthResponseDto>> Login(LoginDto dto)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
+        User? user;
 
-        if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
+        if (dto.EmailOrPhone.Contains('@'))
         {
-            return Unauthorized(new { message = "Email yoki parol noto'g'ri." });
+            var normalizedEmail = NormalizeEmail(dto.EmailOrPhone);
+            user = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
+        }
+        else
+        {
+            if (!_phoneNormalizer.TryNormalize(dto.EmailOrPhone, out var normalizedPhone))
+            {
+                return Unauthorized(new { message = "Email/telefon yoki parol noto'g'ri." });
+            }
+            user = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone);
+        }
+
+        if (user == null || user.PasswordHash == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
+        {
+            return Unauthorized(new { message = "Email/telefon yoki parol noto'g'ri." });
         }
 
         var response = await GenerateAuthResponse(user);
@@ -112,6 +179,7 @@ public class AuthController : ControllerBase
             firstName = user.FirstName,
             lastName = user.LastName,
             phoneNumber = user.PhoneNumber,
+            role = user.Role,
             odooPartnerId = user.OdooPartnerId
         });
     }
@@ -165,7 +233,77 @@ public class AuthController : ControllerBase
         return Ok(new { message = "Chiqish muvaffaqiyatli amalga oshirildi." });
     }
 
+    // ==========================================
+    // GAP-3: Forgot / Reset password
+    // ==========================================
+
+    [EnableRateLimiting("AuthPolicy")]
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordDto dto)
+    {
+        var normalizedEmail = NormalizeEmail(dto.Email);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
+
+        // XAVFSIZLIK: user topilmasa yoki Google orqali ro'yxatdan o'tgan bo'lsa ham,
+        // har doim bir xil generic xabar qaytariladi (user enumeration'ning oldini olish uchun)
+        var genericResponse = new { message = "Agar bu email ro'yxatdan o'tgan bo'lsa, parolni tiklash havolasi yuborildi." };
+
+        if (user == null || user.AuthProvider != "local")
+        {
+            return Ok(genericResponse);
+        }
+
+        var tokenBytes = new byte[64];
+        using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(tokenBytes);
+        }
+        var token = Convert.ToBase64String(tokenBytes)
+            .Replace("+", "-").Replace("/", "_").Replace("=", "");
+
+        user.ResetPasswordToken = token;
+        user.ResetPasswordTokenExpiry = DateTime.UtcNow.AddMinutes(30);
+        await _db.SaveChangesAsync();
+
+        var frontendUrl = _config["Frontend:ResetPasswordUrl"];
+        var resetLink = $"{frontendUrl}?token={token}";
+
+        await _emailService.SendPasswordResetEmailAsync(user.Email, resetLink);
+
+        return Ok(genericResponse);
+    }
+
+    [EnableRateLimiting("AuthPolicy")]
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordDto dto)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.ResetPasswordToken == dto.Token);
+
+        if (user == null || user.ResetPasswordTokenExpiry == null || user.ResetPasswordTokenExpiry < DateTime.UtcNow)
+        {
+            return BadRequest(new { message = "Token noto'g'ri yoki muddati o'tgan." });
+        }
+
+        if (string.IsNullOrEmpty(dto.NewPassword) || dto.NewPassword.Length < 6)
+        {
+            return BadRequest(new { message = "Yangi parol kamida 6 belgidan iborat bo'lishi kerak." });
+        }
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+        user.ResetPasswordToken = null;
+        user.ResetPasswordTokenExpiry = null;
+
+        user.RefreshToken = null;
+        user.RefreshTokenExpiryTime = null;
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new { message = "Parol muvaffaqiyatli yangilandi. Iltimos, qaytadan login qiling." });
+    }
+
     // --- Helper methods ---
+
+    private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
 
     private async Task<AuthResponseDto> GenerateAuthResponse(User user)
     {
@@ -184,7 +322,8 @@ public class AuthController : ControllerBase
             RefreshToken = refreshToken,
             FirstName = user.FirstName,
             LastName = user.LastName,
-            Email = user.Email
+            Email = user.Email,
+            Role = user.Role
         };
     }
 
@@ -195,7 +334,8 @@ public class AuthController : ControllerBase
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.GivenName, user.FirstName),
             new Claim(ClaimTypes.Surname, user.LastName),
-            new Claim(ClaimTypes.Email, user.Email)
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.Role, user.Role)
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
