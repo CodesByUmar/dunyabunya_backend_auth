@@ -92,7 +92,7 @@ public class AuthController : ControllerBase
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
             // Tekshiruv va saqlash orasidagi parallel so'rovda duplicate paydo bo'lishi mumkin
-            // (TOCTOU). Endi DB darajasidagi UNIQUE index buni ushlaydi.
+            // (TOCTOU). DB darajasidagi UNIQUE index buni ushlaydi.
             return BadRequest(new { message = "Bu email yoki telefon raqam allaqachon ro'yxatdan o'tgan." });
         }
 
@@ -108,7 +108,7 @@ public class AuthController : ControllerBase
 
     [EnableRateLimiting("AuthPolicy")]
     [HttpPost("google-login")]
-    public async Task<ActionResult<AuthResponseDto>> GoogleLogin(GoogleLoginDto dto)
+    public async Task<IActionResult> GoogleLogin(GoogleLoginDto dto)
     {
         Google.Apis.Auth.GoogleJsonWebSignature.Payload payload;
         try
@@ -127,14 +127,6 @@ public class AuthController : ControllerBase
         var normalizedEmail = NormalizeEmail(payload.Email);
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
 
-        // Agar userning email'i hali tasdiqlanmagan (masalan local ro'yxatdan o'tgan-u,
-        // kod bilan tasdiqlamagan) bo'lsa, Google login o'zi email egaligini isbotlaydi.
-        if (user != null && !user.EmailVerified)
-        {
-            user.EmailVerified = true;
-            await _db.SaveChangesAsync();
-        }
-
         if (user == null)
         {
             user = new User
@@ -146,8 +138,11 @@ public class AuthController : ControllerBase
                 PasswordHash = null,
                 AuthProvider = "google",
                 Role = "Customer",
-                // Google email egaligini allaqachon tasdiqlagan, qo'shimcha kod shart emas.
-                EmailVerified = true
+                // Google token email egaligini tasdiqlagan bo'lsa-da, qo'shimcha xavfsizlik
+                // qatlami sifatida baribir 6 xonali kod yuboriladi va tasdiqlangunicha
+                // login berilmaydi (masalan: bir xil ismli boshqa odam sifatida ko'rsatilib
+                // qolmasligi uchun).
+                EmailVerified = false
             };
 
             user.OdooPartnerId = await _odooService.GetOrCreatePartnerAsync(
@@ -171,6 +166,21 @@ public class AuthController : ControllerBase
                     return Conflict(new { message = "Ro'yxatdan o'tishda xatolik yuz berdi." });
                 }
             }
+        }
+
+        // Hali tasdiqlanmagan bo'lsa (yangi Google user yoki avval local ro'yxatdan
+        // o'tib, kodni hech qachon tasdiqlamagan user) — kod yuboramiz va Login bilan
+        // BIR XIL formatdagi 403 javobni qaytaramiz, frontend buni bir xil ishlaydi.
+        if (!user.EmailVerified)
+        {
+            await SendVerificationCodeAsync(user);
+            return StatusCode(403, new
+            {
+                message = "Email hali tasdiqlanmagan. Iltimos, avval emailingizga yuborilgan kodni tasdiqlang.",
+                code = "EMAIL_NOT_VERIFIED",
+                requiresVerification = true,
+                email = user.Email
+            });
         }
 
         var response = await GenerateAuthResponse(user);
@@ -204,9 +214,13 @@ public class AuthController : ControllerBase
 
         if (!user.EmailVerified)
         {
-            return Unauthorized(new
+            // XAVFSIZLIK/UX: 403 (Forbidden) + code="EMAIL_NOT_VERIFIED" — frontend
+            // aynan shu status+code kombinatsiyasini kutadi (login-page.tsx), 401
+            // "parol noto'g'ri" degan umumiy xato bilan aralashib ketmasligi uchun.
+            return StatusCode(403, new
             {
                 message = "Email hali tasdiqlanmagan. Iltimos, avval emailingizga yuborilgan kodni tasdiqlang.",
+                code = "EMAIL_NOT_VERIFIED",
                 requiresVerification = true,
                 email = user.Email
             });
@@ -250,7 +264,9 @@ public class AuthController : ControllerBase
         // XAVFSIZLIK: user enumeration'ning oldini olish uchun har doim bir xil javob.
         var genericResponse = new { message = "Agar bu email ro'yxatdan o'tgan va tasdiqlanmagan bo'lsa, yangi kod yuborildi." };
 
-        if (user == null || user.EmailVerified || user.AuthProvider != "local")
+        // AuthProvider != "local" sharti OLIB TASHLANDI — endi Google orqali
+        // ro'yxatdan o'tib, hali tasdiqlamagan userlar ham kodni qayta so'rashi mumkin.
+        if (user == null || user.EmailVerified)
         {
             return Ok(genericResponse);
         }
@@ -281,6 +297,74 @@ public class AuthController : ControllerBase
             phoneNumber = user.PhoneNumber,
             role = user.Role,
             odooPartnerId = user.OdooPartnerId
+        });
+    }
+
+    // Google orqali birinchi marta kirgan (telefon/parolsiz) userlar profilni
+    // to'ldirishi uchun, shuningdek istalgan user keyinroq telefon/parolini
+    // yangilashi uchun ishlatiladi.
+    [Authorize]
+    [EnableRateLimiting("AuthPolicy")]
+    [HttpPatch("complete-profile")]
+    public async Task<IActionResult> CompleteProfile(CompleteProfileDto dto)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!int.TryParse(userIdStr, out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return NotFound();
+
+        if (dto.PhoneNumber == null && dto.Password == null)
+        {
+            return BadRequest(new { message = "Telefon raqam yoki parol kiritilishi shart." });
+        }
+
+        if (dto.PhoneNumber != null)
+        {
+            if (!_phoneNormalizer.TryNormalize(dto.PhoneNumber, out var normalizedPhone))
+            {
+                return BadRequest(new { message = "Telefon raqam formati noto'g'ri." });
+            }
+
+            if (await _db.Users.AnyAsync(u => u.Id != user.Id && u.PhoneNumber == normalizedPhone))
+            {
+                return BadRequest(new { message = "Bu telefon raqam allaqachon ro'yxatdan o'tgan." });
+            }
+
+            user.PhoneNumber = normalizedPhone;
+        }
+
+        if (dto.Password != null)
+        {
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+        }
+
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            return BadRequest(new { message = "Bu telefon raqam allaqachon ro'yxatdan o'tgan." });
+        }
+
+        // Endi refresh token bekor qilinmaydi — foydalanuvchi qayta login qilishga
+        // majburlanmasdan, shu yerning o'zida yangi token olib, avtomatik davom etadi.
+        var response = await GenerateAuthResponse(user);
+
+        return Ok(new
+        {
+            token = response.Token,
+            refreshToken = response.RefreshToken,
+            firstName = response.FirstName,
+            lastName = response.LastName,
+            email = response.Email,
+            role = response.Role,
+            phoneNumber = user.PhoneNumber,
+            message = "Profil muvaffaqiyatli yangilandi."
         });
     }
 
@@ -346,7 +430,7 @@ public class AuthController : ControllerBase
     }
 
     // ==========================================
-    // GAP-3: Forgot / Reset password
+    // Forgot / Reset password — 6 xonali kod orqali (link orqali EMAS)
     // ==========================================
 
     [EnableRateLimiting("AuthPolicy")]
@@ -356,65 +440,55 @@ public class AuthController : ControllerBase
         var normalizedEmail = NormalizeEmail(dto.Email);
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
 
-        // XAVFSIZLIK: user topilmasa yoki Google orqali ro'yxatdan o'tgan bo'lsa ham,
-        // har doim bir xil generic xabar qaytariladi (user enumeration'ning oldini olish uchun)
-        var genericResponse = new { message = "Agar bu email ro'yxatdan o'tgan bo'lsa, parolni tiklash havolasi yuborildi." };
+        // XAVFSIZLIK: user topilmasa yoki Google orqali ro'yxatdan o'tgan (parolsiz)
+        // bo'lsa ham, har doim bir xil generic xabar qaytariladi (user enumeration'ning
+        // oldini olish uchun).
+        var genericResponse = new { message = "Agar bu email ro'yxatdan o'tgan bo'lsa, tasdiqlash kodi yuborildi." };
 
         if (user == null || user.AuthProvider != "local")
         {
             return Ok(genericResponse);
         }
 
-        var tokenBytes = new byte[64];
-        using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
-        {
-            rng.GetBytes(tokenBytes);
-        }
-        var token = Convert.ToBase64String(tokenBytes)
-            .Replace("+", "-").Replace("/", "_").Replace("=", "");
+        var code = System.Security.Cryptography.RandomNumberGenerator.GetInt32(0, 1_000_000)
+            .ToString("D6");
 
-        // Token DB'da ochiq emas, faqat SHA-256 hashi saqlanadi (DB o'g'irlansa ham
-        // tokenlarni ishlatib bo'lmaydi).
-        user.ResetPasswordToken = HashToken(token);
-        user.ResetPasswordTokenExpiry = DateTime.UtcNow.AddMinutes(30);
+        // Kod DB'da ochiq emas, faqat SHA-256 hashi saqlanadi (mavjud
+        // ResetPasswordToken/ResetPasswordTokenExpiry ustunlari qayta ishlatilgan —
+        // endi "token" emas, "6 xonali kod hashi" saqlaydi).
+        user.ResetPasswordToken = HashToken(code);
+        user.ResetPasswordTokenExpiry = DateTime.UtcNow.AddMinutes(15);
         await _db.SaveChangesAsync();
 
-        var frontendUrl = _config["Frontend:ResetPasswordUrl"];
-        var resetLink = $"{frontendUrl}?token={token}";
-
-        await _emailService.SendPasswordResetEmailAsync(user.Email, resetLink);
+        await _emailService.SendPasswordResetEmailAsync(user.Email, code);
 
         return Ok(genericResponse);
     }
 
     [EnableRateLimiting("AuthPolicy")]
     [HttpPost("reset-password")]
-    public async Task<IActionResult> ResetPassword(ResetPasswordDto dto)
+    public async Task<ActionResult<AuthResponseDto>> ResetPassword(ResetPasswordDto dto)
     {
-        var tokenHash = HashToken(dto.Token);
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.ResetPasswordToken == tokenHash);
+        var normalizedEmail = NormalizeEmail(dto.Email);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
 
         if (user == null ||
-            !SecureEquals(user.ResetPasswordToken, tokenHash) ||
             user.ResetPasswordTokenExpiry == null ||
-            user.ResetPasswordTokenExpiry < DateTime.UtcNow)
+            user.ResetPasswordTokenExpiry < DateTime.UtcNow ||
+            !SecureEquals(user.ResetPasswordToken, HashToken(dto.Code)))
         {
-            return BadRequest(new { message = "Token noto'g'ri yoki muddati o'tgan." });
+            return BadRequest(new { message = "Kod noto'g'ri yoki muddati o'tgan." });
         }
-
-        // Parol murakkabligi endi ResetPasswordDto orqali ([MinLength(8)] + regex)
-        // avtomatik tekshiriladi ([ApiController] ModelState orqali).
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
         user.ResetPasswordToken = null;
         user.ResetPasswordTokenExpiry = null;
 
-        user.RefreshToken = null;
-        user.RefreshTokenExpiryTime = null;
-
-        await _db.SaveChangesAsync();
-
-        return Ok(new { message = "Parol muvaffaqiyatli yangilandi. Iltimos, qaytadan login qiling." });
+        // Qaytadan login qilish shart emas — GenerateAuthResponse eski refresh
+        // tokenni yangisi bilan almashtiradi, shuning uchun o'g'irlangan bo'lishi
+        // mumkin bo'lgan eski sessiya baribir avtomatik bekor bo'ladi.
+        var response = await GenerateAuthResponse(user);
+        return Ok(response);
     }
 
     // --- Helper methods ---

@@ -46,13 +46,19 @@ public class RefreshRequestDto
 
 public class ForgotPasswordDto
 {
+    [Required, EmailAddress]
     public string Email { get; set; } = string.Empty;
 }
 
+// Endi link/token orqali EMAS — ro'yxatdan o'tishdagi bilan bir xil uslubda,
+// emailga 6 xonali kod yuborish orqali ishlaydi.
 public class ResetPasswordDto
 {
+    [Required, EmailAddress]
+    public string Email { get; set; } = string.Empty;
+
     [Required]
-    public string Token { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
 
     [Required, MinLength(8), RegularExpression(@"^(?=.*[A-Za-z])(?=.*\d).+$",
         ErrorMessage = "Parol kamida bitta harf va bitta raqamdan iborat bo'lishi kerak.")]
@@ -72,4 +78,15 @@ public class ResendVerificationDto
 {
     [Required, EmailAddress]
     public string Email { get; set; } = string.Empty;
+}
+
+public class CompleteProfileDto
+{
+    // Ikkalasi ham ixtiyoriy — faqat yuborilgan maydon yangilanadi
+    // (masalan faqat parolni o'zgartirish uchun faqat Password yuboriladi).
+    public string? PhoneNumber { get; set; }
+
+    [MinLength(8), RegularExpression(@"^(?=.*[A-Za-z])(?=.*\d).+$",
+        ErrorMessage = "Parol kamida bitta harf va bitta raqamdan iborat bo'lishi kerak.")]
+    public string? Password { get; set; }
 }
