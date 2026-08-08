@@ -56,14 +56,22 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Bu email allaqachon ro'yxatdan o'tgan." });
         }
 
-        if (!_phoneNormalizer.TryNormalize(dto.PhoneNumber, out var normalizedPhone))
+        // Telefon ixtiyoriy: kiritilgan bo'lsa tekshirib saqlaymiz, bo'sh bo'lsa
+        // keyin profil orqali to'ldiriladi (Google oqimidagi kabi).
+        var phoneNumber = "";
+        if (!string.IsNullOrWhiteSpace(dto.PhoneNumber))
         {
-            return BadRequest(new { message = "Telefon raqam formati noto'g'ri." });
-        }
+            if (!_phoneNormalizer.TryNormalize(dto.PhoneNumber, out var normalizedPhone))
+            {
+                return BadRequest(new { message = "Telefon raqam formati noto'g'ri." });
+            }
 
-        if (await _db.Users.AnyAsync(u => u.PhoneNumber == normalizedPhone))
-        {
-            return BadRequest(new { message = "Bu telefon raqam allaqachon ro'yxatdan o'tgan." });
+            if (await _db.Users.AnyAsync(u => u.PhoneNumber == normalizedPhone))
+            {
+                return BadRequest(new { message = "Bu telefon raqam allaqachon ro'yxatdan o'tgan." });
+            }
+
+            phoneNumber = normalizedPhone;
         }
 
         var user = new User
@@ -71,17 +79,24 @@ public class AuthController : ControllerBase
             FirstName = dto.FirstName,
             LastName = dto.LastName,
             Email = normalizedEmail,
-            PhoneNumber = normalizedPhone,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+            PhoneNumber = phoneNumber,
+            // Parol kiritilgan bo'lsa saqlaymiz (eski bitta-forma oqimida shu yerda
+            // o'rnatiladi); Google oqimida kelmaydi va keyin complete-registration
+            // yoki complete-profile orqali o'rnatiladi.
+            PasswordHash = dto.Password != null
+                ? BCrypt.Net.BCrypt.HashPassword(dto.Password)
+                : null,
             Role = "Customer",
-            // Email hali tasdiqlanmagan — kimdir boshqa birovning email/telefonini
-            // kiritib akkaunt ochib qo'yishining oldini olish uchun, login faqat
-            // tasdiqlangandan keyin ruxsat etiladi (pastga qarang: Login, VerifyEmail).
-            EmailVerified = false
+            // Eski (lokal) oqim: parol register'da kiritilgan bo'lsa, akkaunt darhol
+            // tasdiqlangan hisoblanadi va TOKEN qaytariladi — eski frontend parol
+            // formasida darhol tizimga kiradi (tasdiqlash kodi talab qilinmaydi).
+            // Parolsiz (Google / yangi 3-bosqich) oqimda esa email tasdiqlash kodi
+            // yuboriladi va login tasdiqlanguncha bloklanadi.
+            EmailVerified = dto.Password != null
         };
 
         user.OdooPartnerId = await _odooService.GetOrCreatePartnerAsync(
-            $"{dto.FirstName} {dto.LastName}", normalizedPhone, normalizedEmail);
+            $"{dto.FirstName} {dto.LastName}", phoneNumber, normalizedEmail);
 
         _db.Users.Add(user);
 
@@ -93,17 +108,26 @@ public class AuthController : ControllerBase
         {
             // Tekshiruv va saqlash orasidagi parallel so'rovda duplicate paydo bo'lishi mumkin
             // (TOCTOU). DB darajasidagi UNIQUE index buni ushlaydi.
-            return BadRequest(new { message = "Bu email yoki telefon raqam allaqachon ro'yxatdan o'tgan." });
+            return BadRequest(new { message = "Bu email allaqachon ro'yxatdan o'tgan." });
         }
 
-        await SendVerificationCodeAsync(user);
-
-        return Ok(new
+        // Parolsiz registratsiya (Google / yangi 3-bosqich oqimi) — emailga
+        // tasdiqlash kodi yuboriladi, token hali yo'q.
+        if (user.PasswordHash == null)
         {
-            message = "Ro'yxatdan o'tish muvaffaqiyatli. Emailingizga yuborilgan kodni tasdiqlang.",
-            email = user.Email,
-            requiresVerification = true
-        });
+            await SendVerificationCodeAsync(user);
+
+            return Ok(new
+            {
+                message = "Ro'yxatdan o'tish muvaffaqiyatli. Emailingizga yuborilgan kodni tasdiqlang.",
+                email = user.Email,
+                requiresVerification = true
+            });
+        }
+
+        // Eski (lokal) oqim — parol shu yerda o'rnatildi, darhol token qaytariladi.
+        var response = await GenerateAuthResponse(user);
+        return Ok(response);
     }
 
     [EnableRateLimiting("AuthPolicy")]
@@ -138,11 +162,9 @@ public class AuthController : ControllerBase
                 PasswordHash = null,
                 AuthProvider = "google",
                 Role = "Customer",
-                // Google token email egaligini tasdiqlagan bo'lsa-da, qo'shimcha xavfsizlik
-                // qatlami sifatida baribir 6 xonali kod yuboriladi va tasdiqlangunicha
-                // login berilmaydi (masalan: bir xil ismli boshqa odam sifatida ko'rsatilib
-                // qolmasligi uchun).
-                EmailVerified = false
+                // Google token email egaligini allaqachon tasdiqlaydi — yangi Google
+                // foydalanuvchilari darhol tasdiqlangan hisoblanadi (eski oqim).
+                EmailVerified = true
             };
 
             user.OdooPartnerId = await _odooService.GetOrCreatePartnerAsync(
@@ -166,21 +188,6 @@ public class AuthController : ControllerBase
                     return Conflict(new { message = "Ro'yxatdan o'tishda xatolik yuz berdi." });
                 }
             }
-        }
-
-        // Hali tasdiqlanmagan bo'lsa (yangi Google user yoki avval local ro'yxatdan
-        // o'tib, kodni hech qachon tasdiqlamagan user) — kod yuboramiz va Login bilan
-        // BIR XIL formatdagi 403 javobni qaytaramiz, frontend buni bir xil ishlaydi.
-        if (!user.EmailVerified)
-        {
-            await SendVerificationCodeAsync(user);
-            return StatusCode(403, new
-            {
-                message = "Email hali tasdiqlanmagan. Iltimos, avval emailingizga yuborilgan kodni tasdiqlang.",
-                code = "EMAIL_NOT_VERIFIED",
-                requiresVerification = true,
-                email = user.Email
-            });
         }
 
         var response = await GenerateAuthResponse(user);
@@ -212,20 +219,8 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Email/telefon yoki parol noto'g'ri." });
         }
 
-        if (!user.EmailVerified)
-        {
-            // XAVFSIZLIK/UX: 403 (Forbidden) + code="EMAIL_NOT_VERIFIED" — frontend
-            // aynan shu status+code kombinatsiyasini kutadi (login-page.tsx), 401
-            // "parol noto'g'ri" degan umumiy xato bilan aralashib ketmasligi uchun.
-            return StatusCode(403, new
-            {
-                message = "Email hali tasdiqlanmagan. Iltimos, avval emailingizga yuborilgan kodni tasdiqlang.",
-                code = "EMAIL_NOT_VERIFIED",
-                requiresVerification = true,
-                email = user.Email
-            });
-        }
-
+        // Eski (lokal) oqimda tasdiqlash talab qilinmaydi — parol to'g'ri bo'lsa
+        // kirish beriladi (register parol bilan kelsa EmailVerified=true o'rnatadi).
         var response = await GenerateAuthResponse(user);
         return Ok(response);
     }
@@ -273,6 +268,55 @@ public class AuthController : ControllerBase
 
         await SendVerificationCodeAsync(user);
         return Ok(genericResponse);
+    }
+
+    // Yangi 3 bosqichli ro'yxatdan o'tish oqimining yakuniy bosqichi:
+    // email tasdiqlangandan so'ng telefon + parol shu yerda o'rnatiladi va
+    // access/refresh tokenlar qaytariladi. Frontend buni register → verify-email
+    // dan so'ng chaqiradi (apiCompleteRegistration).
+    [EnableRateLimiting("AuthPolicy")]
+    [HttpPost("complete-registration")]
+    public async Task<ActionResult<AuthResponseDto>> CompleteRegistration(CompleteRegistrationDto dto)
+    {
+        var normalizedEmail = NormalizeEmail(dto.Email);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
+
+        // XAVFSIZLIK: faqat hali parol o'rnatmagan (haqiqatan tugallanmagan) akkauntlarni
+        // yakunlashga ruxsat beriladi. Paroli bor user'ni bu endpoint orqali boshqa birov
+        // egallab olishi mumkin bo'lardi — bunday hollarda akkaunt o'z egasiga tegishli
+        // va parolni o'zgartirish uchun forgot-password (kod) yoki complete-profile (JWT)
+        // ishlatilishi kerak.
+        if (user == null || !user.EmailVerified || user.PasswordHash != null)
+        {
+            return BadRequest(new { message = "Avval email orqali ro'yxatdan o'tib, kodni tasdiqlang." });
+        }
+
+        if (!_phoneNormalizer.TryNormalize(dto.PhoneNumber, out var normalizedPhone))
+        {
+            return BadRequest(new { message = "Telefon raqam formati noto'g'ri." });
+        }
+
+        if (await _db.Users.AnyAsync(u => u.Id != user.Id && u.PhoneNumber == normalizedPhone))
+        {
+            return BadRequest(new { message = "Bu telefon raqam allaqachon ro'yxatdan o'tgan." });
+        }
+
+        user.PhoneNumber = normalizedPhone;
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+        if (!string.IsNullOrEmpty(dto.FirstName)) user.FirstName = dto.FirstName;
+        if (!string.IsNullOrEmpty(dto.LastName)) user.LastName = dto.LastName;
+
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            return BadRequest(new { message = "Bu telefon raqam allaqachon ro'yxatdan o'tgan." });
+        }
+
+        var response = await GenerateAuthResponse(user);
+        return Ok(response);
     }
 
     [Authorize]

@@ -9,11 +9,34 @@ public class RegisterDto
     public string LastName { get; set; } = string.Empty;
     [Required, EmailAddress]
     public string Email { get; set; } = string.Empty;
+    // Parol register'da ixtiyoriy — eski (bitta forma) oqimda kiritiladi va shu
+    // yerda saqlanadi; Google oqimida esa umuman kelmaydi. MinLength/Regex faqat
+    // qiymat kiritilganda tekshiriladi.
+    [MinLength(8), RegularExpression(@"^(?=.*[A-Za-z])(?=.*\d).+$",
+        ErrorMessage = "Parol kamida bitta harf va bitta raqamdan iborat bo'lishi kerak.")]
+    public string? Password { get; set; }
+
+    // Telefon ham ixtiyoriy — eski (bitta forma) oqimda kiritiladi va saqlanadi;
+    // bo'sh kelganda "" sifatida qoladi (keyin profil orqali to'ldiriladi).
+    public string? PhoneNumber { get; set; }
+}
+
+// Yangi 3 bosqichli ro'yxatdan o'tish oqimining yakuniy bosqichi:
+// email tasdiqlangandan so'ng telefon va parol shu yerda o'rnatiladi.
+public class CompleteRegistrationDto
+{
+    [Required, EmailAddress]
+    public string Email { get; set; } = string.Empty;
+
     [Required]
     public string PhoneNumber { get; set; } = string.Empty;
+
     [Required, MinLength(8), RegularExpression(@"^(?=.*[A-Za-z])(?=.*\d).+$",
         ErrorMessage = "Parol kamida bitta harf va bitta raqamdan iborat bo'lishi kerak.")]
     public string Password { get; set; } = string.Empty;
+
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
 }
 public class LoginDto
 {
