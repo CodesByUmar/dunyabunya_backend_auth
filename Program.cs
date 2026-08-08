@@ -43,18 +43,20 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// CORS — frontend bilan ulanish uchun
+// CORS — frontend bilan ulanish uchun.
+// Ro'yxat endi appsettings.json'dagi "Cors:AllowedOrigins" massividan olinadi,
+// shuning uchun production domenini kodni o'zgartirmasdan qo'shish/o'chirish mumkin.
+// Muhim: production frontend domeni (masalan Vercel) shu ro'yxatda bo'lishi SHART,
+// aks holda browser CORS xatosi bilan API'ga so'rov yubora olmaydi.
 const string CorsPolicyName = "AllowFrontends";
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? Array.Empty<string>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(CorsPolicyName, policy =>
     {
-        policy.WithOrigins(
-            "http://192.168.89.164:5173",  // do'kon
-            "http://192.168.89.164:5174",  // admin
-            "http://localhost:5173",
-            "http://localhost:5174"
-        )
+        policy.WithOrigins(allowedOrigins)
         .AllowAnyHeader()
         .AllowAnyMethod()
         .AllowCredentials();
@@ -84,15 +86,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // --- Rate Limiting: login/register kabi endpointlarni brute-force'dan himoya qilish ---
+// SlidingWindow FixedWindow'ga qaraganda yaxshiroq: FixedWindow'da oyna chegarasida
+// (masalan 14:59 va 15:01) ketma-ket ikki marta limit to'lib, aslida 2x so'rovga
+// ruxsat berilishi mumkin edi. SlidingWindow buni tekislaydi.
 builder.Services.AddRateLimiter(options =>
 {
     options.AddPolicy("AuthPolicy", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
+        RateLimitPartition.GetSlidingWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
+            factory: _ => new SlidingWindowRateLimiterOptions
             {
                 PermitLimit = 20,
                 Window = TimeSpan.FromMinutes(15),
+                SegmentsPerWindow = 3,
                 QueueLimit = 0
             }));
 

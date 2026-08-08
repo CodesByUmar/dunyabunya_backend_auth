@@ -11,7 +11,8 @@ public class RegisterDto
     public string Email { get; set; } = string.Empty;
     [Required]
     public string PhoneNumber { get; set; } = string.Empty;
-    [Required, MinLength(6)]
+    [Required, MinLength(8), RegularExpression(@"^(?=.*[A-Za-z])(?=.*\d).+$",
+        ErrorMessage = "Parol kamida bitta harf va bitta raqamdan iborat bo'lishi kerak.")]
     public string Password { get; set; } = string.Empty;
 }
 public class LoginDto
@@ -50,6 +51,25 @@ public class ForgotPasswordDto
 
 public class ResetPasswordDto
 {
+    [Required]
     public string Token { get; set; } = string.Empty;
+
+    [Required, MinLength(8), RegularExpression(@"^(?=.*[A-Za-z])(?=.*\d).+$",
+        ErrorMessage = "Parol kamida bitta harf va bitta raqamdan iborat bo'lishi kerak.")]
     public string NewPassword { get; set; } = string.Empty;
+}
+
+public class VerifyEmailDto
+{
+    [Required, EmailAddress]
+    public string Email { get; set; } = string.Empty;
+
+    [Required]
+    public string Code { get; set; } = string.Empty;
+}
+
+public class ResendVerificationDto
+{
+    [Required, EmailAddress]
+    public string Email { get; set; } = string.Empty;
 }

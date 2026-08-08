@@ -58,4 +58,49 @@ public class SmtpEmailService : IEmailService
             _logger.LogError(ex, "Email yuborishda xatolik: {Email}", toEmail);
         }
     }
+
+    public async Task SendVerificationCodeEmailAsync(string toEmail, string code)
+    {
+        var host = _config["Smtp:Host"] ?? "smtp.gmail.com";
+        var port = int.Parse(_config["Smtp:Port"] ?? "587");
+        var username = _config["Smtp:Username"];
+        var password = _config["Smtp:Password"];
+        var from = _config["Smtp:From"] ?? username;
+
+        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+        {
+            _logger.LogWarning("SMTP sozlamalari to'liq emas. Tasdiqlash kodi yuborilmadi: {Email}", toEmail);
+            return;
+        }
+
+        using var client = new SmtpClient(host, port)
+        {
+            EnableSsl = true,
+            Credentials = new NetworkCredential(username, password)
+        };
+
+        var message = new MailMessage
+        {
+            From = new MailAddress(from!, "DunyaBunya"),
+            Subject = "Emailingizni tasdiqlang",
+            Body = $@"
+                <h3>Email tasdiqlash kodi</h3>
+                <p>Ro'yxatdan o'tishni yakunlash uchun quyidagi kodni kiriting (15 daqiqa amal qiladi):</p>
+                <h2 style=""letter-spacing:4px"">{code}</h2>
+                <p>Agar bu so'rovni siz yubormagan bo'lsangiz, bu xabarni e'tiborsiz qoldiring.</p>
+            ",
+            IsBodyHtml = true
+        };
+        message.To.Add(toEmail);
+
+        try
+        {
+            await client.SendMailAsync(message);
+            _logger.LogInformation("Tasdiqlash kodi yuborildi: {Email}", toEmail);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Tasdiqlash kodini yuborishda xatolik: {Email}", toEmail);
+        }
+    }
 }

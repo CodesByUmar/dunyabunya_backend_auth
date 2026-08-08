@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using AuthApi.Data;
+using System.Security.Claims;
 
 namespace AuthApi.Controllers;
 
@@ -57,6 +58,14 @@ public class AdminController : ControllerBase
         if (!allowedRoles.Contains(dto.Role))
         {
             return BadRequest(new { message = "Rol noto'g'ri. Faqat 'Customer' yoki 'Admin' bo'lishi mumkin." });
+        }
+
+        // XAVFSIZLIK: admin o'zini-o'zi pasaytirib, tizimdan qulflanib qolmasligi uchun.
+        var currentUserIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (int.TryParse(currentUserIdStr, out var currentUserId) &&
+            currentUserId == id && dto.Role != "Admin")
+        {
+            return BadRequest(new { message = "O'zingizning Admin rolingizni pasaytira olmaysiz." });
         }
 
         user.Role = dto.Role;

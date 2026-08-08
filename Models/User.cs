@@ -16,4 +16,10 @@ public class User
     public DateTime? RefreshTokenExpiryTime { get; set; }
     public string? ResetPasswordToken { get; set; }
     public DateTime? ResetPasswordTokenExpiry { get; set; }
+
+    // Email tasdiqlash: eski userlar uchun default TRUE (migration'da),
+    // yangi ro'yxatdan o'tganlar uchun Register endpoint'da explicit FALSE qilinadi.
+    public bool EmailVerified { get; set; } = true;
+    public string? EmailVerificationCodeHash { get; set; }
+    public DateTime? EmailVerificationCodeExpiry { get; set; }
 }
