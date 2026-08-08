@@ -9,6 +9,7 @@ using AuthApi.Data;
 using AuthApi.Models;
 using AuthApi.Services;
 using Microsoft.AspNetCore.RateLimiting;
+using Npgsql;
 
 namespace AuthApi.Controllers;
 
@@ -79,7 +80,17 @@ public class AuthController : ControllerBase
             $"{dto.FirstName} {dto.LastName}", normalizedPhone, normalizedEmail);
 
         _db.Users.Add(user);
-        await _db.SaveChangesAsync();
+
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // Tekshiruv va saqlash orasidagi parallel so'rovda duplicate paydo bo'lishi mumkin
+            // (TOCTOU). Endi DB darajasidagi UNIQUE index buni ushlaydi.
+            return BadRequest(new { message = "Bu email yoki telefon raqam allaqachon ro'yxatdan o'tgan." });
+        }
 
         var response = await GenerateAuthResponse(user);
         return Ok(response);
@@ -123,7 +134,23 @@ public class AuthController : ControllerBase
                 $"{user.FirstName} {user.LastName}", user.PhoneNumber, normalizedEmail);
 
             _db.Users.Add(user);
-            await _db.SaveChangesAsync();
+
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+            {
+                // Muvaffaqiyatsiz insert'ning entity'si hali 'Added' holatida track qilinadi —
+                // keyingi SaveChanges uni yana insert qilmoqchi bo'ladi. Trackerni tozalaymiz,
+                // keyin parallel so'rov yaratgan user'ni qayta yuklaymiz.
+                _db.ChangeTracker.Clear();
+                user = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
+                if (user == null)
+                {
+                    return Conflict(new { message = "Ro'yxatdan o'tishda xatolik yuz berdi." });
+                }
+            }
         }
 
         var response = await GenerateAuthResponse(user);
@@ -202,7 +229,7 @@ public class AuthController : ControllerBase
         var user = await _db.Users.FindAsync(userId);
 
         if (user == null ||
-            user.RefreshToken != dto.RefreshToken ||
+            user.RefreshToken != HashToken(dto.RefreshToken) ||
             user.RefreshTokenExpiryTime <= DateTime.UtcNow)
         {
             return Unauthorized(new { message = "Refresh token noto'g'ri yoki muddati tugagan. Qayta login qiling." });
@@ -261,7 +288,9 @@ public class AuthController : ControllerBase
         var token = Convert.ToBase64String(tokenBytes)
             .Replace("+", "-").Replace("/", "_").Replace("=", "");
 
-        user.ResetPasswordToken = token;
+        // Token DB'da ochiq emas, faqat SHA-256 hashi saqlanadi (DB o'g'irlansa ham
+        // tokenlarni ishlatib bo'lmaydi).
+        user.ResetPasswordToken = HashToken(token);
         user.ResetPasswordTokenExpiry = DateTime.UtcNow.AddMinutes(30);
         await _db.SaveChangesAsync();
 
@@ -277,7 +306,7 @@ public class AuthController : ControllerBase
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword(ResetPasswordDto dto)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.ResetPasswordToken == dto.Token);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.ResetPasswordToken == HashToken(dto.Token));
 
         if (user == null || user.ResetPasswordTokenExpiry == null || user.ResetPasswordTokenExpiry < DateTime.UtcNow)
         {
@@ -310,7 +339,8 @@ public class AuthController : ControllerBase
         var token = GenerateJwtToken(user);
         var refreshToken = GenerateRefreshToken();
 
-        user.RefreshToken = refreshToken;
+        // Refresh token DB'da ochiq emas, faqat SHA-256 hashi saqlanadi.
+        user.RefreshToken = HashToken(refreshToken);
         user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(
             double.Parse(_config["Jwt:RefreshTokenExpireDays"]!));
 
@@ -360,6 +390,30 @@ public class AuthController : ControllerBase
         using var rng = System.Security.Cryptography.RandomNumberGenerator.Create();
         rng.GetBytes(randomBytes);
         return Convert.ToBase64String(randomBytes);
+    }
+
+    /// <summary>
+    /// DB'da saqlash uchun token'ni SHA-256 bilan hashlaydi. Tokenlar 64 random
+    /// baytdan iborat (yuqori entropiya), shuning uchun salt kerak emas.
+    /// </summary>
+    private static string? HashToken(string? token)
+    {
+        // JSON'da null kelishi mumkin ([Required] yorlig'i yo'q) — 500 o'rniga
+        // null qaytaramiz, taqqoslash xatosiz 401/400 beradi.
+        if (string.IsNullOrEmpty(token)) return null;
+
+        var bytes = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(token));
+        return Convert.ToHexString(bytes);
+    }
+
+    /// <summary>
+    /// DbUpdateException PostgreSQL unique_violation (SQLSTATE 23505) tufayli
+    /// yuzaga kelganmi?
+    /// </summary>
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        return ex.InnerException is PostgresException pg && pg.SqlState == "23505";
     }
 
     private ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)

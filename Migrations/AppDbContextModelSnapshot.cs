@@ -77,6 +77,13 @@ namespace AuthApi.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique()
+                        .HasFilter("\"PhoneNumber\" <> ''");
+
                     b.ToTable("Users");
                 });
 #pragma warning restore 612, 618
