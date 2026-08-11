@@ -172,43 +172,19 @@ public class AuthController : ControllerBase
         var normalizedEmail = NormalizeEmail(payload.Email);
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
 
+        // Login sahifasidagi Google tugmasi faqat MAVJUD userlar uchun — ro'yxatdan
+        // o'tmagan hisob avtomatik yaratilmaydi, frontend buni ko'rib Register
+        // sahifasiga yo'naltirishi kerak.
         if (user == null)
         {
-            user = new User
+            return NotFound(new
             {
-                FirstName = payload.GivenName ?? "",
-                LastName = payload.FamilyName ?? "",
-                Email = normalizedEmail,
-                PhoneNumber = "",
-                PasswordHash = null,
-                AuthProvider = "google",
-                Role = "Customer",
-                // Google token email egaligini allaqachon tasdiqlaydi — yangi Google
-                // foydalanuvchilari darhol tasdiqlangan hisoblanadi (eski oqim).
-                EmailVerified = true
-            };
-
-            user.OdooPartnerId = await TryGetOrCreateOdooPartnerAsync(
-                $"{user.FirstName} {user.LastName}", user.PhoneNumber, normalizedEmail);
-
-            _db.Users.Add(user);
-
-            try
-            {
-                await _db.SaveChangesAsync();
-            }
-            catch (DbUpdateException ex) when (IsUniqueViolation(ex))
-            {
-                // Muvaffaqiyatsiz insert'ning entity'si hali 'Added' holatida track qilinadi —
-                // keyingi SaveChanges uni yana insert qilmoqchi bo'ladi. Trackerni tozalaymiz,
-                // keyin parallel so'rov yaratgan user'ni qayta yuklaymiz.
-                _db.ChangeTracker.Clear();
-                user = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
-                if (user == null)
-                {
-                    return Conflict(new { message = "Ro'yxatdan o'tishda xatolik yuz berdi." });
-                }
-            }
+                message = "Bu Google akkaunt hali ro'yxatdan o'tmagan.",
+                requiresRegistration = true,
+                email = normalizedEmail,
+                firstName = payload.GivenName ?? "",
+                lastName = payload.FamilyName ?? ""
+            });
         }
 
         var response = await GenerateAuthResponse(user);

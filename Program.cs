@@ -71,7 +71,7 @@ builder.Services.AddSwaggerGen(options =>
 // CORS — frontend bilan ulanish uchun.
 // Ro'yxat endi appsettings.json'dagi "Cors:AllowedOrigins" massividan olinadi,
 // shuning uchun production domenini kodni o'zgartirmasdan qo'shish/o'chirish mumkin.
-// Muhim: production frontend domeni (masalan Vercel) shu ro'yxatda bo'lishi SHART,
+// Muhim: production frontend domeni (masalan demo.dunyabunya.uz) shu ro'yxatda bo'lishi SHART,
 // aks holda browser CORS xatosi bilan API'ga so'rov yubora olmaydi.
 const string CorsPolicyName = "AllowFrontends";
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
