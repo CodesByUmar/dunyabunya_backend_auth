@@ -4,10 +4,9 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Threading.RateLimiting;
 using AuthApi.Data;
+using AuthApi.Filters;
 using AuthApi.Services;
 using Microsoft.OpenApi;
-using AuthApi.Services;
-// ...
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,7 +15,22 @@ builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 
 builder.Services.AddScoped<IPhoneNormalizerService, PhoneNormalizerService>();
 builder.Services.AddScoped<IEmailDomainValidatorService, EmailDomainValidatorService>();
-builder.Services.AddScoped<IOdooService, NoOpOdooService>(); // Odoo tayyor bo'lganda shu qatorni almashtirasiz
+
+// Odoo JSON-RPC orqali chaqiriladi — BaseUrl/Timeout appsettings'dagi "Odoo" bo'limidan.
+builder.Services.AddHttpClient<IOdooService, OdooService>((sp, client) =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var baseUrl = config["Odoo:BaseUrl"];
+    if (!string.IsNullOrEmpty(baseUrl))
+    {
+        client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    }
+
+    var timeoutSeconds = double.TryParse(config["Odoo:TimeoutSeconds"], out var t) ? t : 5;
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
+
+builder.Services.AddHostedService<OdooRetryBackgroundService>();
 
 // DbContext (PostgreSQL)
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -41,6 +55,17 @@ builder.Services.AddSwaggerGen(options =>
     {
         [new OpenApiSecuritySchemeReference("Bearer", document)] = new List<string>()
     });
+
+    // Odoo integratsiya endpointlari (RequireOdooApiKey) uchun alohida — Swagger UI'da
+    // shu endpointlarga "Authorize" orqali X-Api-Key kiritish mumkin bo'ladi.
+    options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
+    {
+        Name = "X-Api-Key",
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Description = "Odoo integratsiya endpointlari uchun (Odoo:ApiKeyInbound qiymati)."
+    });
+    options.OperationFilter<OdooApiKeySwaggerFilter>();
 });
 
 // CORS — frontend bilan ulanish uchun.

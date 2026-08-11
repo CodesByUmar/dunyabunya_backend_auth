@@ -23,6 +23,7 @@ public class AuthController : ControllerBase
     private readonly IOdooService _odooService;
     private readonly IEmailDomainValidatorService _emailDomainValidator;
     private readonly IEmailService _emailService;
+    private readonly ILogger<AuthController> _logger;
 
     public AuthController(
         AppDbContext db,
@@ -30,7 +31,8 @@ public class AuthController : ControllerBase
         IPhoneNormalizerService phoneNormalizer,
         IOdooService odooService,
         IEmailDomainValidatorService emailDomainValidator,
-        IEmailService emailService)
+        IEmailService emailService,
+        ILogger<AuthController> logger)
     {
         _db = db;
         _config = config;
@@ -38,6 +40,25 @@ public class AuthController : ControllerBase
         _odooService = odooService;
         _emailDomainValidator = emailDomainValidator;
         _emailService = emailService;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Odoo bilan sinxronizatsiya (mavjud mijozni topish/yaratish) — Odoo vaqtincha
+    /// ishlamay qolishi yoki sekinlashishi mumkin. Bu registratsiyani to'xtatmasligi
+    /// kerak: xato bo'lsa OdooPartnerId null qoladi, keyinroq qayta urinish mumkin.
+    /// </summary>
+    private async Task<int?> TryGetOrCreateOdooPartnerAsync(string fullName, string phone, string email)
+    {
+        try
+        {
+            return await _odooService.GetOrCreatePartnerAsync(fullName, phone, email);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Odoo bilan sinxronizatsiya muvaffaqiyatsiz bo'ldi ({Email}) — OdooPartnerId null qoldirildi, registratsiya davom etadi.", email);
+            return null;
+        }
     }
 
     [EnableRateLimiting("AuthPolicy")]
@@ -95,7 +116,7 @@ public class AuthController : ControllerBase
             EmailVerified = dto.Password != null
         };
 
-        user.OdooPartnerId = await _odooService.GetOrCreatePartnerAsync(
+        user.OdooPartnerId = await TryGetOrCreateOdooPartnerAsync(
             $"{dto.FirstName} {dto.LastName}", phoneNumber, normalizedEmail);
 
         _db.Users.Add(user);
@@ -167,7 +188,7 @@ public class AuthController : ControllerBase
                 EmailVerified = true
             };
 
-            user.OdooPartnerId = await _odooService.GetOrCreatePartnerAsync(
+            user.OdooPartnerId = await TryGetOrCreateOdooPartnerAsync(
                 $"{user.FirstName} {user.LastName}", user.PhoneNumber, normalizedEmail);
 
             _db.Users.Add(user);
