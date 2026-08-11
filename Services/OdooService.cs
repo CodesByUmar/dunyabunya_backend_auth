@@ -54,8 +54,46 @@ public class OdooService : IOdooService
 
     private async Task<int?> SearchPartnerByPhoneAsync(string db, int uid, string apiKey, string phone)
     {
-        // Ham "phone", ham "mobile" maydonidan qidiramiz — Odoo'da qaysi biriga
-        // yozilgani bizga noma'lum.
+        // 1) Avval aniq (=) mos kelishni tekshiramiz — tez yo'l, ko'p yozuvlar shu
+        // formatda saqlangan bo'ladi.
+        var exactId = await SearchExactAsync(db, uid, apiKey, phone);
+        if (exactId.HasValue) return exactId;
+
+        // 2) Odoo'da eski yozuvlar ko'pincha bo'shliq/chiziqcha bilan saqlangan
+        // (masalan "+998 90 970 28 58"), shuning uchun tutash substring qidiruv ham
+        // bo'shliqqa duch kelib topolmay qolishi mumkin. Shu sababli mahalliy 9 xonali
+        // qismning HAR BIR raqami orasiga "%" (wildcard) qo'yib qidiramiz — shunda
+        // orada qanday belgi (bo'shliq, chiziqcha) bo'lishidan qat'i nazar topiladi.
+        var digitsOnly = OnlyDigits(phone);
+        if (digitsOnly.Length < 9) return null;
+        var localDigits = digitsOnly[^9..];
+        var pattern = "%" + string.Join("%", localDigits.ToCharArray()) + "%";
+
+        var fuzzyDomain = new object[]
+        {
+            new object[] { "|", new object[] { "phone", "ilike", pattern }, new object[] { "mobile", "ilike", pattern } }
+        };
+        var fuzzyKwargs = new Dictionary<string, object> { ["fields"] = new[] { "id", "phone", "mobile" }, ["limit"] = 20 };
+
+        var fuzzyResult = await CallAsync("object", "execute_kw",
+            new object[] { db, uid, apiKey, "res.partner", "search_read", fuzzyDomain, fuzzyKwargs });
+
+        foreach (var item in fuzzyResult.EnumerateArray())
+        {
+            var candidatePhone = GetStringOrNull(item, "phone");
+            var candidateMobile = GetStringOrNull(item, "mobile");
+
+            if (OnlyDigits(candidatePhone) == digitsOnly || OnlyDigits(candidateMobile) == digitsOnly)
+            {
+                return item.GetProperty("id").GetInt32();
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<int?> SearchExactAsync(string db, int uid, string apiKey, string phone)
+    {
         var domain = new object[]
         {
             new object[] { "|", new object[] { "phone", "=", phone }, new object[] { "mobile", "=", phone } }
@@ -65,14 +103,21 @@ public class OdooService : IOdooService
         var result = await CallAsync("object", "execute_kw",
             new object[] { db, uid, apiKey, "res.partner", "search_read", domain, kwargs });
 
-        var items = result.EnumerateArray();
-        foreach (var item in items)
+        foreach (var item in result.EnumerateArray())
         {
             return item.GetProperty("id").GetInt32();
         }
 
         return null;
     }
+
+    private static string? GetStringOrNull(JsonElement item, string property) =>
+        item.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static string OnlyDigits(string? value) =>
+        value == null ? "" : new string(value.Where(char.IsDigit).ToArray());
 
     private async Task<int> CreatePartnerAsync(string db, int uid, string apiKey, string fullName, string phone, string email)
     {
