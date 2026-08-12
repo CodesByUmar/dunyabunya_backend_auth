@@ -149,23 +149,38 @@ public class OdooService : IOdooService
     /// </summary>
     private async Task TagAsMarketplaceAsync(string db, int uid, string apiKey, int partnerId)
     {
-        try
+        // "Marketplace" tegini birinchi marta qidirish/yaratishda (kesh bo'sh bo'lganda)
+        // Odoo tomonidan vaqti-vaqti bilan tasodifiy xato ("string index out of range")
+        // kelishi kuzatildi — sababi noaniq, lekin qayta urinishda odatda o'tadi.
+        // Shuning uchun 2 marta urinamiz, baribir muvaffaqiyatsiz bo'lsa faqat log yoziladi.
+        for (var attempt = 1; attempt <= 2; attempt++)
         {
-            var tagId = await GetOrCreateMarketplaceTagAsync(db, uid, apiKey);
-
-            await CallAsync("object", "execute_kw", new object[]
+            try
             {
-                db, uid, apiKey, "res.partner", "write",
-                new object[]
+                var tagId = await GetOrCreateMarketplaceTagAsync(db, uid, apiKey);
+
+                await CallAsync("object", "execute_kw", new object[]
                 {
-                    new object[] { partnerId },
-                    new Dictionary<string, object> { ["category_id"] = new object[] { new object[] { 4, tagId } } }
+                    db, uid, apiKey, "res.partner", "write",
+                    new object[]
+                    {
+                        new object[] { partnerId },
+                        new Dictionary<string, object> { ["category_id"] = new object[] { new object[] { 4, tagId } } }
+                    }
+                });
+                return;
+            }
+            catch (Exception ex)
+            {
+                if (attempt == 2)
+                {
+                    _logger.LogWarning(ex, "Partner {PartnerId}ga 'Marketplace' tegini qo'yib bo'lmadi.", partnerId);
                 }
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Partner {PartnerId}ga 'Marketplace' tegini qo'yib bo'lmadi.", partnerId);
+                else
+                {
+                    await Task.Delay(500);
+                }
+            }
         }
     }
 
