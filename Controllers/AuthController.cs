@@ -151,8 +151,12 @@ public class AuthController : ControllerBase
             };
             payload = await Google.Apis.Auth.GoogleJsonWebSignature.ValidateAsync(dto.IdToken, settings);
         }
-        catch (Google.Apis.Auth.InvalidJwtException)
+        catch (Exception ex) when (ex is Google.Apis.Auth.InvalidJwtException or Newtonsoft.Json.JsonException or FormatException)
         {
+            // dto.IdToken tashqi (foydalanuvchi tomonidan yuboriladigan) qiymat — noto'g'ri
+            // formatlangan bo'lsa, Google kutubxonasi turli xil exception qaytarishi mumkin
+            // (InvalidJwtException, JSON parsing xatosi va h.k.). Barchasi "yaroqsiz token".
+            _logger.LogWarning(ex, "Google token tekshiruvi muvaffaqiyatsiz bo'ldi.");
             return Unauthorized(new { message = "Google tokeni noto'g'ri yoki muddati tugagan." });
         }
 
