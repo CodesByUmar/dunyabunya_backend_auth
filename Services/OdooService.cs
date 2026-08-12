@@ -148,10 +148,15 @@ public class OdooService : IOdooService
 
     private static int? _marketplaceTagIdCache;
 
+    // "Xaridorlar" — Odoo'da mavjud, tayyor teg (res.partner.category, audit orqali
+    // aniqlangan). Marketplace orqali kelgan har bir mijoz (topilgan yoki yangi
+    // yaratilgan) ikkala tegni ham olishi kerak: "Marketplace" va "Xaridorlar".
+    private const int XaridorlarTagId = 135;
+
     /// <summary>
-    /// Mijozga "Marketplace" tegini qo'yadi — Odoo Contacts'da bu mijoz marketplace
-    /// orqali kelganini filtrlab ko'rish uchun. Xato bo'lsa faqat log yoziladi,
-    /// asosiy oqimga (partnerId) ta'sir qilmaydi.
+    /// Mijozga "Marketplace" va "Xaridorlar" teglarini qo'yadi — Odoo Contacts'da bu
+    /// mijoz marketplace orqali kelgan mijoz ekanini filtrlab ko'rish uchun. Xato
+    /// bo'lsa faqat log yoziladi, asosiy oqimga (partnerId) ta'sir qilmaydi.
     /// </summary>
     private async Task TagAsMarketplaceAsync(string db, int uid, string apiKey, int partnerId)
     {
@@ -163,7 +168,7 @@ public class OdooService : IOdooService
         {
             try
             {
-                var tagId = await GetOrCreateMarketplaceTagAsync(db, uid, apiKey);
+                var marketplaceTagId = await GetOrCreateMarketplaceTagAsync(db, uid, apiKey);
 
                 await CallAsync("object", "execute_kw", new object[]
                 {
@@ -171,7 +176,14 @@ public class OdooService : IOdooService
                     new object[]
                     {
                         new object[] { partnerId },
-                        new Dictionary<string, object> { ["category_id"] = new object[] { new object[] { 4, tagId } } }
+                        new Dictionary<string, object>
+                        {
+                            ["category_id"] = new object[]
+                            {
+                                new object[] { 4, marketplaceTagId },
+                                new object[] { 4, XaridorlarTagId }
+                            }
+                        }
                     }
                 });
                 return;
@@ -180,7 +192,7 @@ public class OdooService : IOdooService
             {
                 if (attempt == 2)
                 {
-                    _logger.LogWarning(ex, "Partner {PartnerId}ga 'Marketplace' tegini qo'yib bo'lmadi.", partnerId);
+                    _logger.LogWarning(ex, "Partner {PartnerId}ga teglarni qo'yib bo'lmadi.", partnerId);
                 }
                 else
                 {
