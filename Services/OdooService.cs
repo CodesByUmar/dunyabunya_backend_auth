@@ -124,13 +124,19 @@ public class OdooService : IOdooService
     private static string OnlyDigits(string? value) =>
         value == null ? "" : new string(value.Where(char.IsDigit).ToArray());
 
+    // res.partner.title "XARIDORLAR" — Odoo tomonida mijozlarni asosiy tasniflash shu
+    // maydon (Title) orqali qilinadi (Tags emas). Yangi mijozlar ham shu bo'limga tushishi
+    // uchun yaratishda o'rnatiladi.
+    private const int XaridorlarTitleId = 84;
+
     private async Task<int> CreatePartnerAsync(string db, int uid, string apiKey, string fullName, string phone, string email)
     {
         var values = new Dictionary<string, object?>
         {
             ["name"] = string.IsNullOrWhiteSpace(fullName) ? phone : fullName,
             ["phone"] = phone,
-            ["customer_rank"] = 1
+            ["customer_rank"] = 1,
+            ["title"] = XaridorlarTitleId
         };
         if (!string.IsNullOrWhiteSpace(email)) values["email"] = email;
 
