@@ -20,7 +20,7 @@ public class AuthController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
     private readonly IPhoneNormalizerService _phoneNormalizer;
-    private readonly IOdooService _odooService;
+    private readonly IOdooSyncQueue _odooSyncQueue;
     private readonly IEmailDomainValidatorService _emailDomainValidator;
     private readonly IEmailService _emailService;
     private readonly ILogger<AuthController> _logger;
@@ -29,7 +29,7 @@ public class AuthController : ControllerBase
         AppDbContext db,
         IConfiguration config,
         IPhoneNormalizerService phoneNormalizer,
-        IOdooService odooService,
+        IOdooSyncQueue odooSyncQueue,
         IEmailDomainValidatorService emailDomainValidator,
         IEmailService emailService,
         ILogger<AuthController> logger)
@@ -37,28 +37,10 @@ public class AuthController : ControllerBase
         _db = db;
         _config = config;
         _phoneNormalizer = phoneNormalizer;
-        _odooService = odooService;
+        _odooSyncQueue = odooSyncQueue;
         _emailDomainValidator = emailDomainValidator;
         _emailService = emailService;
         _logger = logger;
-    }
-
-    /// <summary>
-    /// Odoo bilan sinxronizatsiya (mavjud mijozni topish/yaratish) — Odoo vaqtincha
-    /// ishlamay qolishi yoki sekinlashishi mumkin. Bu registratsiyani to'xtatmasligi
-    /// kerak: xato bo'lsa OdooPartnerId null qoladi, keyinroq qayta urinish mumkin.
-    /// </summary>
-    private async Task<int?> TryGetOrCreateOdooPartnerAsync(string fullName, string phone, string email)
-    {
-        try
-        {
-            return await _odooService.GetOrCreatePartnerAsync(fullName, phone, email);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Odoo bilan sinxronizatsiya muvaffaqiyatsiz bo'ldi ({Email}) — OdooPartnerId null qoldirildi, registratsiya davom etadi.", email);
-            return null;
-        }
     }
 
     [EnableRateLimiting("AuthPolicy")]
@@ -116,9 +98,6 @@ public class AuthController : ControllerBase
             EmailVerified = dto.Password != null
         };
 
-        user.OdooPartnerId = await TryGetOrCreateOdooPartnerAsync(
-            $"{dto.FirstName} {dto.LastName}", phoneNumber, normalizedEmail);
-
         _db.Users.Add(user);
 
         try
@@ -130,6 +109,14 @@ public class AuthController : ControllerBase
             // Tekshiruv va saqlash orasidagi parallel so'rovda duplicate paydo bo'lishi mumkin
             // (TOCTOU). DB darajasidagi UNIQUE index buni ushlaydi.
             return BadRequest(new { message = "Bu email allaqachon ro'yxatdan o'tgan." });
+        }
+
+        // Odoo sinxronizatsiyasi javobni kutdirmasin — fon jarayoniga (OdooRetryBackgroundService)
+        // topshiramiz, u deyarli darhol qayta ishlaydi. Telefon bo'sh bo'lsa navbatga
+        // qo'yish shart emas (OdooService baribir null qaytaradi).
+        if (!string.IsNullOrWhiteSpace(phoneNumber))
+        {
+            _odooSyncQueue.Enqueue(user.Id);
         }
 
         // Parolsiz registratsiya (Google / yangi 3-bosqich oqimi) — emailga

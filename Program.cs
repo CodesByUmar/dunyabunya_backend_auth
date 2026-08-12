@@ -30,6 +30,7 @@ builder.Services.AddHttpClient<IOdooService, OdooService>((sp, client) =>
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
 });
 
+builder.Services.AddSingleton<IOdooSyncQueue, OdooSyncQueue>();
 builder.Services.AddHostedService<OdooRetryBackgroundService>();
 
 // DbContext (PostgreSQL)

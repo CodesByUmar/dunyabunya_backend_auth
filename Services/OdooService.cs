@@ -39,9 +39,14 @@ public class OdooService : IOdooService
         var uid = await AuthenticateAsync(db, username, apiKey);
 
         var existingId = await SearchPartnerByPhoneAsync(db, uid, apiKey, phone);
-        if (existingId.HasValue) return existingId;
+        var partnerId = existingId ?? await CreatePartnerAsync(db, uid, apiKey, fullName, phone, email);
 
-        return await CreatePartnerAsync(db, uid, apiKey, fullName, phone, email);
+        // Mavjud bo'lsin, yangi yaratilgan bo'lsin — marketplace orqali kelgan
+        // mijoz sifatida belgilaymiz (Odoo Contacts'da filtrlash uchun tag).
+        // Bu xato bersa ham asosiy oqim (partnerId) buzilmasligi kerak.
+        await TagAsMarketplaceAsync(db, uid, apiKey, partnerId);
+
+        return partnerId;
     }
 
     private async Task<int> AuthenticateAsync(string db, string username, string apiKey)
@@ -133,6 +138,61 @@ public class OdooService : IOdooService
             new object[] { db, uid, apiKey, "res.partner", "create", new object[] { values } });
 
         return result.GetInt32();
+    }
+
+    private static int? _marketplaceTagIdCache;
+
+    /// <summary>
+    /// Mijozga "Marketplace" tegini qo'yadi — Odoo Contacts'da bu mijoz marketplace
+    /// orqali kelganini filtrlab ko'rish uchun. Xato bo'lsa faqat log yoziladi,
+    /// asosiy oqimga (partnerId) ta'sir qilmaydi.
+    /// </summary>
+    private async Task TagAsMarketplaceAsync(string db, int uid, string apiKey, int partnerId)
+    {
+        try
+        {
+            var tagId = await GetOrCreateMarketplaceTagAsync(db, uid, apiKey);
+
+            await CallAsync("object", "execute_kw", new object[]
+            {
+                db, uid, apiKey, "res.partner", "write",
+                new object[]
+                {
+                    new object[] { partnerId },
+                    new Dictionary<string, object> { ["category_id"] = new object[] { new object[] { 4, tagId } } }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Partner {PartnerId}ga 'Marketplace' tegini qo'yib bo'lmadi.", partnerId);
+        }
+    }
+
+    private async Task<int> GetOrCreateMarketplaceTagAsync(string db, int uid, string apiKey)
+    {
+        if (_marketplaceTagIdCache.HasValue) return _marketplaceTagIdCache.Value;
+
+        var domain = new object[] { new object[] { "name", "=", "Marketplace" } };
+        var kwargs = new Dictionary<string, object> { ["fields"] = new[] { "id" }, ["limit"] = 1 };
+
+        var result = await CallAsync("object", "execute_kw",
+            new object[] { db, uid, apiKey, "res.partner.category", "search_read", domain, kwargs });
+
+        foreach (var item in result.EnumerateArray())
+        {
+            _marketplaceTagIdCache = item.GetProperty("id").GetInt32();
+            return _marketplaceTagIdCache.Value;
+        }
+
+        var createResult = await CallAsync("object", "execute_kw", new object[]
+        {
+            db, uid, apiKey, "res.partner.category", "create",
+            new object[] { new Dictionary<string, object> { ["name"] = "Marketplace" } }
+        });
+
+        _marketplaceTagIdCache = createResult.GetInt32();
+        return _marketplaceTagIdCache.Value;
     }
 
     private async Task<JsonElement> CallAsync(string service, string method, object[] args)
