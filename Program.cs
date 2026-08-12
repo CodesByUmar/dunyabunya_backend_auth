@@ -33,6 +33,22 @@ builder.Services.AddHttpClient<IOdooService, OdooService>((sp, client) =>
 builder.Services.AddSingleton<IOdooSyncQueue, OdooSyncQueue>();
 builder.Services.AddHostedService<OdooRetryBackgroundService>();
 
+// Mahsulotlarni tortish uchun — xuddi shu Odoo bazasi, alohida HttpClient (timeout
+// kattaroq, chunki bir nechta bosqichli so'rov ketadi: template -> attribute -> value).
+builder.Services.AddHttpClient<IOdooProductService, OdooProductService>((sp, client) =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var baseUrl = config["Odoo:BaseUrl"];
+    if (!string.IsNullOrEmpty(baseUrl))
+    {
+        client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    }
+
+    var timeoutSeconds = double.TryParse(config["Odoo:ProductTimeoutSeconds"], out var t) ? t : 30;
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
+builder.Services.AddHostedService<ProductSyncBackgroundService>();
+
 // DbContext (PostgreSQL)
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));

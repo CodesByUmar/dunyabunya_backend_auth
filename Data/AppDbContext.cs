@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     }
 
     public DbSet<User> Users { get; set; }
+    public DbSet<Product> Products { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,6 +25,13 @@ public class AppDbContext : DbContext
             entity.HasIndex(u => u.PhoneNumber)
                 .IsUnique()
                 .HasFilter("\"PhoneNumber\" <> ''");
+        });
+
+        modelBuilder.Entity<Product>(entity =>
+        {
+            entity.HasIndex(p => p.OdooTemplateId).IsUnique();
+            entity.Property(p => p.Price).HasColumnType("numeric(18,2)");
+            entity.Property(p => p.Cost).HasColumnType("numeric(18,2)");
         });
     }
 }
