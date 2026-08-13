@@ -18,6 +18,7 @@ namespace AuthApi.Migrations
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    OdooProductId = table.Column<int>(type: "integer", nullable: false),
                     OdooTemplateId = table.Column<int>(type: "integer", nullable: false),
                     Name = table.Column<string>(type: "text", nullable: false),
                     DefaultCode = table.Column<string>(type: "text", nullable: true),
@@ -35,10 +36,15 @@ namespace AuthApi.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_Products_OdooProductId",
+                table: "Products",
+                column: "OdooProductId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Products_OdooTemplateId",
                 table: "Products",
-                column: "OdooTemplateId",
-                unique: true);
+                column: "OdooTemplateId");
         }
 
         /// <inheritdoc />

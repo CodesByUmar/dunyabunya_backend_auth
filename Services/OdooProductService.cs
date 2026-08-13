@@ -4,15 +4,24 @@ using System.Text.Json;
 namespace AuthApi.Services;
 
 /// <summary>
-/// Odoo'dan is_published=true bo'lgan mahsulotlarni JSON-RPC orqali tortib oladi.
-/// Brend maydon sifatida mavjud emas — u "Brend" (attribute_id=11199) nomli variant
-/// xususiyati sifatida saqlangan (product.template.attribute.line -> value_ids ->
-/// product.attribute.value.name). Bu ID audit orqali aniqlangan; Odoo'da "Brand"
-/// nomli deyarli ishlatilmagan (24 ta) dublikat ham bor — shu sabab ishlatilmaydi.
+/// Odoo'dan is_published=true bo'lgan mahsulot VARIANTLARINI (product.product) JSON-RPC
+/// orqali tortib oladi. Ikkita muhim narsa audit orqali aniqlangan:
+///
+/// 1) is_published product.template darajasida emas, product.product (variant)
+///    darajasida tekshirilishi kerak — bitta asosiy mahsulotning bir nechta varianti
+///    (masalan turli amper/o'lcham) bo'lishi mumkin, har biri alohida SKU.
+///
+/// 2) Narx list_price'dan emas, "Websayt" nomli pricelist (id=4)dan olinadi
+///    (product.pricelist.item, fixed_price) — bu haqiqiy sotuv narxi.
+///
+/// Brend — "Brend" (attribute_id=11199) nomli variant xususiyati sifatida saqlangan,
+/// template darajasida (product.template.attribute.line -> value_ids ->
+/// product.attribute.value.name).
 /// </summary>
 public class OdooProductService : IOdooProductService
 {
     private const int BrendAttributeId = 11199;
+    private const int WebsitePricelistId = 4;
 
     private readonly HttpClient _http;
     private readonly IConfiguration _config;
@@ -39,95 +48,133 @@ public class OdooProductService : IOdooProductService
 
         var uid = await AuthenticateAsync(db, username, apiKey);
 
-        // 1) is_published=true bo'lgan barcha template'lar
-        var templates = await CallAsync("object", "execute_kw", new object[]
+        // 1) is_published=true bo'lgan barcha VARIANTLAR (product.product)
+        var variants = await CallAsync("object", "execute_kw", new object[]
         {
-            db, uid, apiKey, "product.template", "search_read",
+            db, uid, apiKey, "product.product", "search_read",
             new object[] { new object[] { new object[] { "is_published", "=", true } } },
             new Dictionary<string, object>
             {
-                ["fields"] = new[] { "id", "name", "default_code", "barcode", "list_price", "standard_price", "categ_id", "attribute_line_ids" }
+                ["fields"] = new[] { "id", "name", "default_code", "barcode", "standard_price", "categ_id", "product_tmpl_id" }
             }
         });
-        var templateList = templates.EnumerateArray().ToList();
-        if (templateList.Count == 0) return new List<OdooProductDto>();
+        var variantList = variants.EnumerateArray().ToList();
+        if (variantList.Count == 0) return new List<OdooProductDto>();
 
-        // 2) attribute_line'lardan "Brend" (11199) bo'lganlarini ajratamiz
-        var allLineIds = templateList
-            .SelectMany(t => t.GetProperty("attribute_line_ids").EnumerateArray().Select(x => x.GetInt32()))
-            .Distinct()
-            .ToArray();
+        var variantIds = variantList.Select(v => v.GetProperty("id").GetInt32()).ToArray();
+        var templateIds = variantList.Select(v => v.GetProperty("product_tmpl_id")[0].GetInt32()).Distinct().ToArray();
 
-        var templateToBrandValueId = new Dictionary<int, int>();
-        var brandValueIds = new HashSet<int>();
+        // 2) "Websayt" pricelist'dan har bir variant uchun narx
+        var priceByVariantId = await GetWebsitePricesAsync(db, uid, apiKey, variantIds);
 
-        if (allLineIds.Length > 0)
-        {
-            var lines = await CallAsync("object", "execute_kw", new object[]
-            {
-                db, uid, apiKey, "product.template.attribute.line", "read",
-                new object[] { allLineIds.Cast<object>().ToArray() },
-                new Dictionary<string, object> { ["fields"] = new[] { "id", "attribute_id", "value_ids", "product_tmpl_id" } }
-            });
-
-            foreach (var line in lines.EnumerateArray())
-            {
-                var attrId = line.GetProperty("attribute_id")[0].GetInt32();
-                if (attrId != BrendAttributeId) continue;
-
-                var tmplId = line.GetProperty("product_tmpl_id")[0].GetInt32();
-                var valueIds = line.GetProperty("value_ids").EnumerateArray().Select(x => x.GetInt32()).ToList();
-                if (valueIds.Count == 0) continue;
-
-                templateToBrandValueId[tmplId] = valueIds[0];
-                brandValueIds.Add(valueIds[0]);
-            }
-        }
-
-        // 3) Brend qiymatlarining haqiqiy nomini olamiz
-        var brandNames = new Dictionary<int, string>();
-        if (brandValueIds.Count > 0)
-        {
-            var values = await CallAsync("object", "execute_kw", new object[]
-            {
-                db, uid, apiKey, "product.attribute.value", "read",
-                new object[] { brandValueIds.Cast<object>().ToArray() },
-                new Dictionary<string, object> { ["fields"] = new[] { "id", "name" } }
-            });
-            foreach (var v in values.EnumerateArray())
-            {
-                brandNames[v.GetProperty("id").GetInt32()] = v.GetProperty("name").GetString() ?? "";
-            }
-        }
+        // 3) Har bir template uchun brend (attribute_id=11199 "Brend")
+        var brandByTemplateId = await GetBrandsByTemplateAsync(db, uid, apiKey, templateIds);
 
         // 4) Yakuniy ro'yxatni yig'amiz
         var result = new List<OdooProductDto>();
-        foreach (var t in templateList)
+        foreach (var v in variantList)
         {
-            var id = t.GetProperty("id").GetInt32();
-            string? brand = null;
-            if (templateToBrandValueId.TryGetValue(id, out var vid) && brandNames.TryGetValue(vid, out var bn))
-            {
-                brand = bn;
-            }
+            var id = v.GetProperty("id").GetInt32();
+            var templateId = v.GetProperty("product_tmpl_id")[0].GetInt32();
 
             string? categoryName = null;
-            if (t.TryGetProperty("categ_id", out var categ) && categ.ValueKind == JsonValueKind.Array)
+            if (v.TryGetProperty("categ_id", out var categ) && categ.ValueKind == JsonValueKind.Array)
             {
                 var arr = categ.EnumerateArray().ToList();
                 if (arr.Count > 1) categoryName = arr[1].GetString();
             }
 
+            priceByVariantId.TryGetValue(id, out var price);
+            brandByTemplateId.TryGetValue(templateId, out var brand);
+
             result.Add(new OdooProductDto(
-                OdooTemplateId: id,
-                Name: t.GetProperty("name").GetString() ?? "",
-                DefaultCode: GetStringOrNull(t, "default_code"),
-                Barcode: GetStringOrNull(t, "barcode"),
-                Price: (decimal)t.GetProperty("list_price").GetDouble(),
-                Cost: (decimal)t.GetProperty("standard_price").GetDouble(),
+                OdooProductId: id,
+                OdooTemplateId: templateId,
+                Name: v.GetProperty("name").GetString() ?? "",
+                DefaultCode: GetStringOrNull(v, "default_code"),
+                Barcode: GetStringOrNull(v, "barcode"),
+                Price: price,
+                Cost: (decimal)v.GetProperty("standard_price").GetDouble(),
                 CategoryName: categoryName,
                 Brand: brand
             ));
+        }
+
+        return result;
+    }
+
+    private async Task<Dictionary<int, decimal>> GetWebsitePricesAsync(string db, int uid, string apiKey, int[] variantIds)
+    {
+        var prices = new Dictionary<int, decimal>();
+
+        var items = await CallAsync("object", "execute_kw", new object[]
+        {
+            db, uid, apiKey, "product.pricelist.item", "search_read",
+            new object[]
+            {
+                new object[]
+                {
+                    new object[] { "pricelist_id", "=", WebsitePricelistId },
+                    new object[] { "product_id", "in", variantIds.Cast<object>().ToArray() }
+                }
+            },
+            new Dictionary<string, object> { ["fields"] = new[] { "product_id", "fixed_price", "compute_price" } }
+        });
+
+        foreach (var item in items.EnumerateArray())
+        {
+            // Hozircha faqat "fixed" turini qo'llab-quvvatlaymiz — audit paytida
+            // barcha 296 ta published mahsulot shu turda ekani tasdiqlangan edi.
+            var computeType = item.GetProperty("compute_price").GetString();
+            if (computeType != "fixed") continue;
+
+            var variantId = item.GetProperty("product_id")[0].GetInt32();
+            prices[variantId] = (decimal)item.GetProperty("fixed_price").GetDouble();
+        }
+
+        return prices;
+    }
+
+    private async Task<Dictionary<int, string>> GetBrandsByTemplateAsync(string db, int uid, string apiKey, int[] templateIds)
+    {
+        var result = new Dictionary<int, string>();
+
+        var lines = await CallAsync("object", "execute_kw", new object[]
+        {
+            db, uid, apiKey, "product.template.attribute.line", "search_read",
+            new object[] { new object[] { new object[] { "product_tmpl_id", "in", templateIds.Cast<object>().ToArray() }, new object[] { "attribute_id", "=", BrendAttributeId } } },
+            new Dictionary<string, object> { ["fields"] = new[] { "product_tmpl_id", "value_ids" } }
+        });
+
+        var templateToBrandValueId = new Dictionary<int, int>();
+        var brandValueIds = new HashSet<int>();
+        foreach (var line in lines.EnumerateArray())
+        {
+            var tmplId = line.GetProperty("product_tmpl_id")[0].GetInt32();
+            var valueIds = line.GetProperty("value_ids").EnumerateArray().Select(x => x.GetInt32()).ToList();
+            if (valueIds.Count == 0) continue;
+
+            templateToBrandValueId[tmplId] = valueIds[0];
+            brandValueIds.Add(valueIds[0]);
+        }
+
+        if (brandValueIds.Count == 0) return result;
+
+        var values = await CallAsync("object", "execute_kw", new object[]
+        {
+            db, uid, apiKey, "product.attribute.value", "read",
+            new object[] { brandValueIds.Cast<object>().ToArray() },
+            new Dictionary<string, object> { ["fields"] = new[] { "id", "name" } }
+        });
+        var brandNames = new Dictionary<int, string>();
+        foreach (var v in values.EnumerateArray())
+        {
+            brandNames[v.GetProperty("id").GetInt32()] = v.GetProperty("name").GetString() ?? "";
+        }
+
+        foreach (var (tmplId, valueId) in templateToBrandValueId)
+        {
+            if (brandNames.TryGetValue(valueId, out var name)) result[tmplId] = name;
         }
 
         return result;

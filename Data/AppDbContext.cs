@@ -29,7 +29,8 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Product>(entity =>
         {
-            entity.HasIndex(p => p.OdooTemplateId).IsUnique();
+            entity.HasIndex(p => p.OdooProductId).IsUnique();
+            entity.HasIndex(p => p.OdooTemplateId);
             entity.Property(p => p.Price).HasColumnType("numeric(18,2)");
             entity.Property(p => p.Cost).HasColumnType("numeric(18,2)");
         });

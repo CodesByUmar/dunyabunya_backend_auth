@@ -31,6 +31,7 @@ public class ProductsController : ControllerBase
             .Select(p => new
             {
                 id = p.Id,
+                odooProductId = p.OdooProductId,
                 odooTemplateId = p.OdooTemplateId,
                 name = p.Name,
                 defaultCode = p.DefaultCode,
@@ -54,6 +55,7 @@ public class ProductsController : ControllerBase
             .Select(p => new
             {
                 id = p.Id,
+                odooProductId = p.OdooProductId,
                 odooTemplateId = p.OdooTemplateId,
                 name = p.Name,
                 defaultCode = p.DefaultCode,

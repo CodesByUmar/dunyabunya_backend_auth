@@ -56,18 +56,19 @@ public class ProductSyncBackgroundService : BackgroundService
         var odooProducts = scope.ServiceProvider.GetRequiredService<IOdooProductService>();
 
         var fresh = await odooProducts.GetPublishedProductsAsync();
-        var freshIds = fresh.Select(p => p.OdooTemplateId).ToHashSet();
+        var freshIds = fresh.Select(p => p.OdooProductId).ToHashSet();
 
         var existing = await db.Products.ToListAsync(ct);
-        var existingByOdooId = existing.ToDictionary(p => p.OdooTemplateId);
+        var existingByOdooId = existing.ToDictionary(p => p.OdooProductId);
 
         var added = 0;
         var updated = 0;
 
         foreach (var dto in fresh)
         {
-            if (existingByOdooId.TryGetValue(dto.OdooTemplateId, out var product))
+            if (existingByOdooId.TryGetValue(dto.OdooProductId, out var product))
             {
+                product.OdooTemplateId = dto.OdooTemplateId;
                 product.Name = dto.Name;
                 product.DefaultCode = dto.DefaultCode;
                 product.Barcode = dto.Barcode;
@@ -82,6 +83,7 @@ public class ProductSyncBackgroundService : BackgroundService
             {
                 db.Products.Add(new Product
                 {
+                    OdooProductId = dto.OdooProductId,
                     OdooTemplateId = dto.OdooTemplateId,
                     Name = dto.Name,
                     DefaultCode = dto.DefaultCode,
@@ -95,7 +97,7 @@ public class ProductSyncBackgroundService : BackgroundService
             }
         }
 
-        var toRemove = existing.Where(p => !freshIds.Contains(p.OdooTemplateId)).ToList();
+        var toRemove = existing.Where(p => !freshIds.Contains(p.OdooProductId)).ToList();
         if (toRemove.Count > 0) db.Products.RemoveRange(toRemove);
 
         await db.SaveChangesAsync(ct);

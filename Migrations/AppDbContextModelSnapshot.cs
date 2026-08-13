@@ -52,6 +52,9 @@ namespace AuthApi.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("OdooProductId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("OdooTemplateId")
                         .HasColumnType("integer");
 
@@ -63,8 +66,10 @@ namespace AuthApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OdooTemplateId")
+                    b.HasIndex("OdooProductId")
                         .IsUnique();
+
+                    b.HasIndex("OdooTemplateId");
 
                     b.ToTable("Products");
                 });
