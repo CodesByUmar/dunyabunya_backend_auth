@@ -157,8 +157,16 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 
 // --- Middleware pipeline (tartib muhim!) ---
-app.UseSwagger();
-app.UseSwaggerUI();
+// Swagger sozlama orqali boshqariladi (ASPNETCORE_ENVIRONMENT emas — bu server
+// sirlarni appsettings.Development.json'dan oladi, shuning uchun Development
+// muhitida qolishi shart). Productionda "Swagger__Enabled=false" env variable
+// bilan ishga tushiriladi, xavfsizlik/yuklama sababli yopiq turadi.
+var swaggerEnabled = builder.Configuration.GetValue<bool?>("Swagger:Enabled") ?? true;
+if (swaggerEnabled)
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 app.UseHttpsRedirection();
 
