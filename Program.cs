@@ -9,6 +9,7 @@ using AuthApi.Services;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService();
 
 // --- Services ---
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
@@ -159,8 +160,8 @@ var app = builder.Build();
 // --- Middleware pipeline (tartib muhim!) ---
 // Swagger sozlama orqali boshqariladi (ASPNETCORE_ENVIRONMENT emas — bu server
 // sirlarni appsettings.Development.json'dan oladi, shuning uchun Development
-// muhitida qolishi shart). Productionda "Swagger__Enabled=false" env variable
-// bilan ishga tushiriladi, xavfsizlik/yuklama sababli yopiq turadi.
+// muhitida qolishi shart). appsettings.json'da o'chirilgan (xavfsizlik/yuklama
+// sababli), faqat appsettings.Development.json'da (gitignored) yoqilgan.
 var swaggerEnabled = builder.Configuration.GetValue<bool?>("Swagger:Enabled") ?? true;
 if (swaggerEnabled)
 {
