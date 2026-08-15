@@ -328,7 +328,8 @@ public class AuthController : ControllerBase
             lastName = user.LastName,
             phoneNumber = user.PhoneNumber,
             role = user.Role,
-            odooPartnerId = user.OdooPartnerId
+            odooPartnerId = user.OdooPartnerId,
+            permissions = SplitPermissions(user.Permissions)
         });
     }
 
@@ -546,9 +547,15 @@ public class AuthController : ControllerBase
             FirstName = user.FirstName,
             LastName = user.LastName,
             Email = user.Email,
-            Role = user.Role
+            Role = user.Role,
+            Permissions = SplitPermissions(user.Permissions)
         };
     }
+
+    private static List<string> SplitPermissions(string? permissions) =>
+        string.IsNullOrEmpty(permissions)
+            ? new List<string>()
+            : permissions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
     private string GenerateJwtToken(User user)
     {
@@ -560,6 +567,11 @@ public class AuthController : ControllerBase
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.Role, user.Role)
         };
+
+        if (!string.IsNullOrEmpty(user.Permissions))
+        {
+            claims.Add(new Claim("permissions", user.Permissions));
+        }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

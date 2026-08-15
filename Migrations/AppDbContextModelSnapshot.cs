@@ -116,6 +116,9 @@ namespace AuthApi.Migrations
                     b.Property<string>("PasswordHash")
                         .HasColumnType("text");
 
+                    b.Property<string>("Permissions")
+                        .HasColumnType("text");
+
                     b.Property<string>("PhoneNumber")
                         .IsRequired()
                         .HasColumnType("text");

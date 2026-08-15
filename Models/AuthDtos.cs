@@ -53,6 +53,9 @@ public class AuthResponseDto
     public string LastName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
+
+    // Faqat Role="Superuser" bo'lganda mazmunli — ruxsat berilgan bo'lim kalitlari.
+    public List<string> Permissions { get; set; } = new();
 }
 
 public class GoogleLoginDto

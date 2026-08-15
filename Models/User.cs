@@ -10,6 +10,11 @@ public class User
     public string? PasswordHash { get; set; }
     public string AuthProvider { get; set; } = "local";
     public string Role { get; set; } = "Customer";
+
+    // Faqat Role="Superuser" uchun mazmunli — ruxsat berilgan bo'lim kalitlari,
+    // vergul bilan ajratilgan (masalan "products,reviews,banners"). Admin uchun
+    // har doim bo'sh (to'liq huquq nazarda tutiladi, saqlash shart emas).
+    public string? Permissions { get; set; }
     public int? OdooPartnerId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string? RefreshToken { get; set; }
