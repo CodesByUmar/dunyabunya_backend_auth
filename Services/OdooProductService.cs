@@ -55,7 +55,7 @@ public class OdooProductService : IOdooProductService
             new object[] { new object[] { new object[] { "is_published", "=", true } } },
             new Dictionary<string, object>
             {
-                ["fields"] = new[] { "id", "name", "default_code", "barcode", "standard_price", "categ_id", "product_tmpl_id", "qty_available" }
+                ["fields"] = new[] { "id", "display_name", "default_code", "barcode", "standard_price", "categ_id", "product_tmpl_id", "qty_available" }
             }
         });
         var variantList = variants.EnumerateArray().ToList();
@@ -94,7 +94,7 @@ public class OdooProductService : IOdooProductService
             result.Add(new OdooProductDto(
                 OdooProductId: id,
                 OdooTemplateId: templateId,
-                Name: v.GetProperty("name").GetString() ?? "",
+                Name: CleanDisplayName(v.GetProperty("display_name").GetString()),
                 DefaultCode: GetStringOrNull(v, "default_code"),
                 Barcode: GetStringOrNull(v, "barcode"),
                 Price: price,
@@ -196,6 +196,17 @@ public class OdooProductService : IOdooProductService
         item.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+
+    // Odoo display_name formati: "[default_code] Nom (variant xususiyati)" — masalan
+    // "[0001-00001] AVR CHINT (NXZM-125S/3P-80A)". default_code'ni alohida maydonda
+    // saqlaymiz, shuning uchun bu yerda boshidagi "[...] " qismini olib tashlaymiz,
+    // qavs ichidagi variant farqi ("(NXZM-...)") esa saqlanib qoladi.
+    private static string CleanDisplayName(string? displayName)
+    {
+        if (string.IsNullOrEmpty(displayName)) return "";
+        var match = System.Text.RegularExpressions.Regex.Match(displayName, @"^\[[^\]]*\]\s*(.*)$");
+        return match.Success ? match.Groups[1].Value : displayName;
+    }
 
     private async Task<JsonElement> CallAsync(string service, string method, object[] args)
     {
