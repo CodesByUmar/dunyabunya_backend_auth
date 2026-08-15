@@ -107,7 +107,8 @@ public class AdminController : ControllerBase
     [HttpPost("staff")]
     public async Task<IActionResult> CreateStaff(CreateStaffDto dto)
     {
-        if (dto.Role != "Admin" && dto.Role != "Superuser")
+        var role = NormalizeRole(dto.Role);
+        if (role == null)
         {
             return BadRequest(new { message = "Rol noto'g'ri. Faqat 'Admin' yoki 'Superuser' bo'lishi mumkin." });
         }
@@ -118,7 +119,7 @@ public class AdminController : ControllerBase
             return BadRequest(new { message = "Bu email allaqachon ro'yxatdan o'tgan." });
         }
 
-        var permissions = AdminSections.Sanitize(dto.Role, dto.Permissions);
+        var permissions = AdminSections.Sanitize(role, dto.Permissions);
 
         var user = new Models.User
         {
@@ -127,7 +128,7 @@ public class AdminController : ControllerBase
             PhoneNumber = dto.PhoneNumber ?? "",
             FirstName = dto.FirstName ?? "",
             LastName = dto.LastName ?? "",
-            Role = dto.Role,
+            Role = role,
             Permissions = permissions.Count > 0 ? string.Join(',', permissions) : null,
             AuthProvider = "local",
             EmailVerified = true
@@ -166,8 +167,8 @@ public class AdminController : ControllerBase
             return NotFound(new { message = "Xodim topilmadi." });
         }
 
-        var newRole = dto.Role ?? user.Role;
-        if (newRole != "Admin" && newRole != "Superuser")
+        var newRole = dto.Role != null ? NormalizeRole(dto.Role) : user.Role;
+        if (newRole == null)
         {
             return BadRequest(new { message = "Rol noto'g'ri. Faqat 'Admin' yoki 'Superuser' bo'lishi mumkin." });
         }
@@ -249,6 +250,16 @@ public class AdminController : ControllerBase
 
         return Ok(new { message = "Xodim o'chirildi." });
     }
+
+    // Frontend rolni kichik harfda yuborishi mumkin ("admin"/"superuser") — bazada
+    // esa har doim "Admin"/"Superuser" (katta harf bilan) saqlanadi, chunki
+    // [Authorize(Roles = "Admin")] va boshqa tekshiruvlar case-sensitive.
+    private static string? NormalizeRole(string role) => role.Trim().ToLowerInvariant() switch
+    {
+        "admin" => "Admin",
+        "superuser" => "Superuser",
+        _ => null
+    };
 
     private async Task<bool> IsLastAdminAsync(int excludingUserId) =>
         !await _db.Users.AnyAsync(u => u.Role == "Admin" && u.Id != excludingUserId);
