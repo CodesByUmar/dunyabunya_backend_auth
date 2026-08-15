@@ -18,6 +18,15 @@ public class Product
     public decimal Cost { get; set; }
     public string? CategoryName { get; set; }
     public string? Brand { get; set; }
+    public bool InStock { get; set; }
+
+    // Odoo'dan olingan rasm (image_128 — katalog kartochkasi uchun kichik
+    // o'lcham, katta rasm butun ro'yxatni sekinlashtirib, so'rovni timeout
+    // qilib qo'ygan edi), base64 — mavjud bo'lsa. Ro'yxat
+    // endpointida o'zi emas, faqat shunga asoslangan URL qaytariladi
+    // (katta JSON payload'dan qochish uchun), rasm alohida endpoint orqali beriladi.
+    public string? ImageBase64 { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

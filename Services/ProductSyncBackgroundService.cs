@@ -76,6 +76,8 @@ public class ProductSyncBackgroundService : BackgroundService
                 product.Cost = dto.Cost;
                 product.CategoryName = dto.CategoryName;
                 product.Brand = dto.Brand;
+                product.InStock = dto.InStock;
+                product.ImageBase64 = dto.ImageBase64;
                 product.UpdatedAt = DateTime.UtcNow;
                 updated++;
             }
@@ -91,7 +93,9 @@ public class ProductSyncBackgroundService : BackgroundService
                     Price = dto.Price,
                     Cost = dto.Cost,
                     CategoryName = dto.CategoryName,
-                    Brand = dto.Brand
+                    Brand = dto.Brand,
+                    InStock = dto.InStock,
+                    ImageBase64 = dto.ImageBase64
                 });
                 added++;
             }

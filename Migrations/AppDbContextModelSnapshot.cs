@@ -48,6 +48,12 @@ namespace AuthApi.Migrations
                     b.Property<string>("DefaultCode")
                         .HasColumnType("text");
 
+                    b.Property<string>("ImageBase64")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("InStock")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");

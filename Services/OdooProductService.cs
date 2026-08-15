@@ -55,7 +55,7 @@ public class OdooProductService : IOdooProductService
             new object[] { new object[] { new object[] { "is_published", "=", true } } },
             new Dictionary<string, object>
             {
-                ["fields"] = new[] { "id", "name", "default_code", "barcode", "standard_price", "categ_id", "product_tmpl_id" }
+                ["fields"] = new[] { "id", "name", "default_code", "barcode", "standard_price", "categ_id", "product_tmpl_id", "qty_available", "image_128" }
             }
         });
         var variantList = variants.EnumerateArray().ToList();
@@ -87,6 +87,10 @@ public class OdooProductService : IOdooProductService
             priceByVariantId.TryGetValue(id, out var price);
             brandByTemplateId.TryGetValue(templateId, out var brand);
 
+            var qtyAvailable = v.TryGetProperty("qty_available", out var qty) && qty.ValueKind == JsonValueKind.Number
+                ? qty.GetDouble()
+                : 0;
+
             result.Add(new OdooProductDto(
                 OdooProductId: id,
                 OdooTemplateId: templateId,
@@ -96,7 +100,9 @@ public class OdooProductService : IOdooProductService
                 Price: price,
                 Cost: (decimal)v.GetProperty("standard_price").GetDouble(),
                 CategoryName: categoryName,
-                Brand: brand
+                Brand: brand,
+                InStock: qtyAvailable > 0,
+                ImageBase64: GetStringOrNull(v, "image_128")
             ));
         }
 
