@@ -10,8 +10,7 @@ public record OdooProductDto(
     decimal Cost,
     string? CategoryName,
     string? Brand,
-    bool InStock,
-    string? ImageBase64
+    bool InStock
 );
 
 public interface IOdooProductService

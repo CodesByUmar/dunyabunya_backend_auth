@@ -77,7 +77,7 @@ namespace AuthApi.Migrations
 
                     b.HasIndex("OdooTemplateId");
 
-                    b.ToTable("Products");
+                    b.ToTable("Products", (string)null);
                 });
 
             modelBuilder.Entity("AuthApi.Models.User", b =>
@@ -154,7 +154,7 @@ namespace AuthApi.Migrations
                         .IsUnique()
                         .HasFilter("\"PhoneNumber\" <> ''");
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 #pragma warning restore 612, 618
         }

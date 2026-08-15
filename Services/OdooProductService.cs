@@ -55,7 +55,7 @@ public class OdooProductService : IOdooProductService
             new object[] { new object[] { new object[] { "is_published", "=", true } } },
             new Dictionary<string, object>
             {
-                ["fields"] = new[] { "id", "name", "default_code", "barcode", "standard_price", "categ_id", "product_tmpl_id", "qty_available", "image_128" }
+                ["fields"] = new[] { "id", "name", "default_code", "barcode", "standard_price", "categ_id", "product_tmpl_id", "qty_available" }
             }
         });
         var variantList = variants.EnumerateArray().ToList();
@@ -101,8 +101,7 @@ public class OdooProductService : IOdooProductService
                 Cost: (decimal)v.GetProperty("standard_price").GetDouble(),
                 CategoryName: categoryName,
                 Brand: brand,
-                InStock: qtyAvailable > 0,
-                ImageBase64: GetStringOrNull(v, "image_128")
+                InStock: qtyAvailable > 0
             ));
         }
 

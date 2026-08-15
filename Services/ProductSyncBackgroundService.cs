@@ -77,7 +77,9 @@ public class ProductSyncBackgroundService : BackgroundService
                 product.CategoryName = dto.CategoryName;
                 product.Brand = dto.Brand;
                 product.InStock = dto.InStock;
-                product.ImageBase64 = dto.ImageBase64;
+                // ImageBase64'ga TEGILMAYDI — rasmni Odoo emas, admin panel (Superuser)
+                // orqali qo'lda yuklaydi, sync uni har safar bo'sh bilan ustidan yozib
+                // yubormasligi kerak.
                 product.UpdatedAt = DateTime.UtcNow;
                 updated++;
             }
@@ -94,8 +96,7 @@ public class ProductSyncBackgroundService : BackgroundService
                     Cost = dto.Cost,
                     CategoryName = dto.CategoryName,
                     Brand = dto.Brand,
-                    InStock = dto.InStock,
-                    ImageBase64 = dto.ImageBase64
+                    InStock = dto.InStock
                 });
                 added++;
             }
