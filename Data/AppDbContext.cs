@@ -18,6 +18,10 @@ public class AppDbContext : DbContext
     public DbSet<Stat> Stats { get; set; }
     public DbSet<Partner> Partners { get; set; }
     public DbSet<Banner> Banners { get; set; }
+    public DbSet<Review> Reviews { get; set; }
+    public DbSet<ServiceReview> ServiceReviews { get; set; }
+    public DbSet<ContactMessage> ContactMessages { get; set; }
+    public DbSet<Notification> Notifications { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -54,6 +58,16 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Subcategory>(entity =>
         {
             entity.HasIndex(s => new { s.CategoryId, s.Slug }).IsUnique();
+        });
+
+        modelBuilder.Entity<Review>(entity =>
+        {
+            entity.HasIndex(r => r.ProductId);
+        });
+
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasIndex(n => n.UserId);
         });
     }
 }

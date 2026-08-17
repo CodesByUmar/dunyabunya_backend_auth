@@ -40,6 +40,8 @@ public class ProductsController : ControllerBase
                 category = p.CategoryName,
                 brand = p.Brand,
                 inStock = p.InStock,
+                rating = p.Rating,
+                reviewCount = p.ReviewCount,
                 image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
                 updatedAt = p.UpdatedAt
             })
@@ -65,6 +67,8 @@ public class ProductsController : ControllerBase
                 category = p.CategoryName,
                 brand = p.Brand,
                 inStock = p.InStock,
+                rating = p.Rating,
+                reviewCount = p.ReviewCount,
                 image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
                 updatedAt = p.UpdatedAt
             })

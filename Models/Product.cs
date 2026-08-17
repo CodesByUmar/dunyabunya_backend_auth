@@ -20,6 +20,11 @@ public class Product
     public string? Brand { get; set; }
     public bool InStock { get; set; }
 
+    // Sharxlardan avtomatik hisoblanadi (ReviewsController) — frontend to'g'ridan-to'g'ri
+    // o'zgartira olmaydi, faqat sharh qo'shilganda/o'chirilganda server yangilaydi.
+    public double Rating { get; set; }
+    public int ReviewCount { get; set; }
+
     // Odoo'dan olingan rasm (image_128 — katalog kartochkasi uchun kichik
     // o'lcham, katta rasm butun ro'yxatni sekinlashtirib, so'rovni timeout
     // qilib qo'ygan edi), base64 — mavjud bo'lsa. Ro'yxat
