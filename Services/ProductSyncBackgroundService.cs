@@ -17,6 +17,16 @@ public class ProductSyncBackgroundService : BackgroundService
     private readonly ILogger<ProductSyncBackgroundService> _logger;
     private readonly TimeSpan _interval;
 
+    // Oxirgi muvaffaqiyatli sinxronizatsiyada nechta qator bo'lgani — DbContext'dan
+    // MUSTAQIL, xotirada saqlanadi. Supabase connection pooling bilan bog'liq
+    // (aniqlanmagan) sabablarga ko'ra ba'zan bir xil so'rov ikki marta ketma-ket
+    // chaqirilganda ham bazadan noto'g'ri bo'sh natija qaytishi kuzatildi — agar
+    // shunga ishonib qolsak, hammasi "yangi" deb hisoblanib, ID'lar har safar
+    // o'zgarib, mahsulot havolalari (linklari) buzilib qolar edi. Shu xotiradagi
+    // qiymat bilan solishtirish orqali bunday holatlarda hech narsaga tegmay,
+    // keyingi davrga qoldiramiz.
+    private int _lastKnownGoodCount = -1;
+
     public ProductSyncBackgroundService(IServiceProvider services, IConfiguration config, ILogger<ProductSyncBackgroundService> logger)
     {
         _services = services;
@@ -59,6 +69,19 @@ public class ProductSyncBackgroundService : BackgroundService
         var freshIds = fresh.Select(p => p.OdooProductId).ToHashSet();
 
         var existing = await db.Products.ToListAsync(ct);
+
+        // XAVFSIZLIK: agar avval muvaffaqiyatli sinxronlangan bo'lsak (ijobiy son
+        // xotirada bor) va endi to'satdan bo'sh/kutilganidan ANCHA kam qator ko'rinsa —
+        // buni haqiqiy o'zgarish emas, vaqtinchalik noto'g'ri o'qish deb hisoblab, bu
+        // davrni hech narsaga tegmasdan o'tkazib yuboramiz.
+        if (_lastKnownGoodCount > 0 && existing.Count < _lastKnownGoodCount / 2)
+        {
+            _logger.LogWarning(
+                "Product sync: kutilmagan pasayish (oldingi {Prev} ta, hozir {Now} ta) — ishonchsiz, bu davr o'tkazib yuborildi.",
+                _lastKnownGoodCount, existing.Count);
+            return;
+        }
+
         var existingByOdooId = existing.ToDictionary(p => p.OdooProductId);
 
         var added = 0;
@@ -106,6 +129,7 @@ public class ProductSyncBackgroundService : BackgroundService
         if (toRemove.Count > 0) db.Products.RemoveRange(toRemove);
 
         await db.SaveChangesAsync(ct);
+        _lastKnownGoodCount = fresh.Count;
 
         _logger.LogInformation(
             "Product sync: {Fresh} ta Odoo'dan olindi ({Added} yangi, {Updated} yangilandi, {Removed} o'chirildi).",
