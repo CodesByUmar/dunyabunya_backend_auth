@@ -11,6 +11,13 @@ public class AppDbContext : DbContext
 
     public DbSet<User> Users { get; set; }
     public DbSet<Product> Products { get; set; }
+    public DbSet<Category> Categories { get; set; }
+    public DbSet<Subcategory> Subcategories { get; set; }
+    public DbSet<Service> Services { get; set; }
+    public DbSet<Advantage> Advantages { get; set; }
+    public DbSet<Stat> Stats { get; set; }
+    public DbSet<Partner> Partners { get; set; }
+    public DbSet<Banner> Banners { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -33,6 +40,20 @@ public class AppDbContext : DbContext
             entity.HasIndex(p => p.OdooTemplateId);
             entity.Property(p => p.Price).HasColumnType("numeric(18,2)");
             entity.Property(p => p.Cost).HasColumnType("numeric(18,2)");
+        });
+
+        modelBuilder.Entity<Category>(entity =>
+        {
+            entity.HasIndex(c => c.Slug).IsUnique();
+            entity.HasMany(c => c.Subcategories)
+                .WithOne(s => s.Category)
+                .HasForeignKey(s => s.CategoryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Subcategory>(entity =>
+        {
+            entity.HasIndex(s => new { s.CategoryId, s.Slug }).IsUnique();
         });
     }
 }
