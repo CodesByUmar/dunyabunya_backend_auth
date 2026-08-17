@@ -24,6 +24,10 @@ public class AppDbContext : DbContext
     public DbSet<Notification> Notifications { get; set; }
     public DbSet<Order> Orders { get; set; }
     public DbSet<OrderItem> OrderItems { get; set; }
+    public DbSet<GiftTier> GiftTiers { get; set; }
+    public DbSet<UserPoints> UserPoints { get; set; }
+    public DbSet<GiftCampaign> GiftCampaigns { get; set; }
+    public DbSet<UserGiftClaim> UserGiftClaims { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -85,6 +89,16 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<OrderItem>(entity =>
         {
             entity.Property(i => i.Price).HasColumnType("numeric(18,2)");
+        });
+
+        modelBuilder.Entity<UserPoints>(entity =>
+        {
+            entity.HasIndex(p => p.UserId).IsUnique();
+        });
+
+        modelBuilder.Entity<UserGiftClaim>(entity =>
+        {
+            entity.HasIndex(c => c.UserId);
         });
     }
 }

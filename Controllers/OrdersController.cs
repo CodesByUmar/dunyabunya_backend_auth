@@ -119,6 +119,24 @@ public class OrdersController : ControllerBase
         };
 
         _db.Orders.Add(order);
+
+        // Har 100 000 so'mga 1 ball — server ichida avtomatik qo'shiladi,
+        // mijoz ballarni to'g'ridan-to'g'ri o'zgartira olmaydi.
+        var pointsToAdd = (int)Math.Floor(total / 100_000m);
+        if (pointsToAdd > 0)
+        {
+            var points = await _db.UserPoints.FirstOrDefaultAsync(p => p.UserId == userId.Value);
+            if (points == null)
+            {
+                points = new UserPoints { UserId = userId.Value };
+                _db.UserPoints.Add(points);
+            }
+            points.Balance += pointsToAdd;
+            points.TotalEarned += pointsToAdd;
+            points.YearPoints += pointsToAdd;
+            points.LastUpdated = DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync();
 
         return Ok(Project(order));
