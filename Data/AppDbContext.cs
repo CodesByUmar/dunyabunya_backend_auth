@@ -22,6 +22,8 @@ public class AppDbContext : DbContext
     public DbSet<ServiceReview> ServiceReviews { get; set; }
     public DbSet<ContactMessage> ContactMessages { get; set; }
     public DbSet<Notification> Notifications { get; set; }
+    public DbSet<Order> Orders { get; set; }
+    public DbSet<OrderItem> OrderItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -68,6 +70,21 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Notification>(entity =>
         {
             entity.HasIndex(n => n.UserId);
+        });
+
+        modelBuilder.Entity<Order>(entity =>
+        {
+            entity.HasIndex(o => o.UserId);
+            entity.Property(o => o.Total).HasColumnType("numeric(18,2)");
+            entity.HasMany(o => o.Items)
+                .WithOne(i => i.Order)
+                .HasForeignKey(i => i.OrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OrderItem>(entity =>
+        {
+            entity.Property(i => i.Price).HasColumnType("numeric(18,2)");
         });
     }
 }
