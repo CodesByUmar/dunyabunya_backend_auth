@@ -48,7 +48,13 @@ builder.Services.AddHttpClient<IOdooProductService, OdooProductService>((sp, cli
     var timeoutSeconds = double.TryParse(config["Odoo:ProductTimeoutSeconds"], out var t) ? t : 30;
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
 });
-builder.Services.AddHostedService<ProductSyncBackgroundService>();
+// Product:SyncEnabled=false orqali vaqtincha o'chirish mumkin — masalan bazadan
+// takroriy noto'g'ri bo'sh natija qaytib, mahsulot ID'lari beqaror bo'lib qolsa,
+// sababi tekshirilayotgan vaqtda fon jarayonini to'xtatib turish uchun.
+if (builder.Configuration.GetValue("Product:SyncEnabled", true))
+{
+    builder.Services.AddHostedService<ProductSyncBackgroundService>();
+}
 
 // DbContext (PostgreSQL)
 builder.Services.AddDbContext<AppDbContext>(options =>
