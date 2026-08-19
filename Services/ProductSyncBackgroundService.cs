@@ -77,6 +77,28 @@ public class ProductSyncBackgroundService : BackgroundService
 
         var existing = await db.Products.ToListAsync(ct);
 
+        // VAQTINCHALIK DIAGNOSTIKA: EF natijasini xom SQL bilan solishtiramiz —
+        // muammo EF/change-tracking'da yoki ulanish/sessiya darajasidami aniqlash uchun.
+        if (existing.Count == 0)
+        {
+            try
+            {
+                var rawCount = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int FROM \"Products\"").FirstAsync(ct);
+                var connState = db.Database.GetDbConnection().State;
+                var connStr = db.Database.GetConnectionString();
+                var dbNameHint = connStr != null && connStr.Contains("Database=")
+                    ? connStr.Substring(connStr.IndexOf("Database=")).Split(';')[0]
+                    : "?";
+                _logger.LogWarning(
+                    "DIAGNOSTIKA-3: EF ToListAsync=0, xom SQL COUNT={RawCount}, ulanish holati={ConnState}, {DbHint}",
+                    rawCount, connState, dbNameHint);
+            }
+            catch (Exception diagEx)
+            {
+                _logger.LogWarning(diagEx, "DIAGNOSTIKA-3: xom SQL tekshiruvi ham xato berdi.");
+            }
+        }
+
         // XAVFSIZLIK: agar avval muvaffaqiyatli sinxronlangan bo'lsak (ijobiy son
         // xotirada bor) va endi Odoo'dan kelgan ro'yxat YOKI bazadagi mavjud ro'yxat
         // to'satdan kutilganidan ANCHA kam ko'rinsa — buni vaqtinchalik noto'g'ri
