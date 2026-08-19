@@ -119,25 +119,32 @@ public class OrdersController : ControllerBase
         };
 
         _db.Orders.Add(order);
+        await _db.SaveChangesAsync();
 
         // Har 100 000 so'mga 1 ball — server ichida avtomatik qo'shiladi,
         // mijoz ballarni to'g'ridan-to'g'ri o'zgartira olmaydi.
+        //
+        // XAVFSIZLIK: "avval o'qib, qo'shib, keyin yozish" usuli ikkita poyga
+        // holatiga yo'l qo'yardi — (1) ikkita buyurtma bir vaqtda kelsa, biri
+        // ikkinchisining ball qo'shganini "yo'qotib" qo'yishi mumkin edi; (2)
+        // foydalanuvchining BIRINCHI buyurtmasi ikki marta bir vaqtda kelsa,
+        // ikkalasi ham UserPoints yozuvini yaratishga urinib, noyob cheklov
+        // xatosi bilan BUYURTMANING O'ZI ham bekor bo'lib qolishi mumkin edi.
+        // Shuning uchun bitta atomik "INSERT ... ON CONFLICT DO UPDATE" orqali,
+        // mavjud bo'lsa qo'shiladi, bo'lmasa yaratiladi — hech qanday poyga yo'q.
         var pointsToAdd = (int)Math.Floor(total / 100_000m);
         if (pointsToAdd > 0)
         {
-            var points = await _db.UserPoints.FirstOrDefaultAsync(p => p.UserId == userId.Value);
-            if (points == null)
-            {
-                points = new UserPoints { UserId = userId.Value };
-                _db.UserPoints.Add(points);
-            }
-            points.Balance += pointsToAdd;
-            points.TotalEarned += pointsToAdd;
-            points.YearPoints += pointsToAdd;
-            points.LastUpdated = DateTime.UtcNow;
+            var now = DateTime.UtcNow;
+            await _db.Database.ExecuteSqlInterpolatedAsync($@"
+                INSERT INTO ""UserPoints"" (""UserId"", ""Balance"", ""TotalEarned"", ""YearPoints"", ""LastUpdated"")
+                VALUES ({userId.Value}, {pointsToAdd}, {pointsToAdd}, {pointsToAdd}, {now})
+                ON CONFLICT (""UserId"") DO UPDATE SET
+                    ""Balance"" = ""UserPoints"".""Balance"" + {pointsToAdd},
+                    ""TotalEarned"" = ""UserPoints"".""TotalEarned"" + {pointsToAdd},
+                    ""YearPoints"" = ""UserPoints"".""YearPoints"" + {pointsToAdd},
+                    ""LastUpdated"" = {now}");
         }
-
-        await _db.SaveChangesAsync();
 
         return Ok(Project(order));
     }

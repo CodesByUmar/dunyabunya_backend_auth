@@ -57,14 +57,22 @@ public class GiftClaimsController : ControllerBase
 
         var totalPoints = tier.Points * dto.Quantity;
 
-        var points = await _db.UserPoints.FirstOrDefaultAsync(p => p.UserId == userId.Value);
-        if (points == null || points.Balance < totalPoints)
+        // XAVFSIZLIK: "avval o'qib, tekshirib, keyin yozish" (read-then-write) usuli
+        // POYGA HOLATIGA (race condition) yo'l qo'yardi — ikkita so'rov bir vaqtda
+        // kelsa, ikkalasi ham "ball yetarli" deb o'tib ketishi va bitta ball evaziga
+        // ikkita sovg'a olib qolishi mumkin edi. Shuning uchun ball yechish bitta
+        // atomik SQL UPDATE sifatida, WHERE shartida balansni ham tekshirib bajariladi —
+        // shart bajarilmasa (boshqa so'rov ulgurib bo'lsa ham) 0 qator o'zgaradi.
+        var rowsAffected = await _db.UserPoints
+            .Where(p => p.UserId == userId.Value && p.Balance >= totalPoints)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(p => p.Balance, p => p.Balance - totalPoints)
+                .SetProperty(p => p.LastUpdated, DateTime.UtcNow));
+
+        if (rowsAffected == 0)
         {
             return BadRequest(new { message = "Ballaringiz yetarli emas." });
         }
-
-        points.Balance -= totalPoints;
-        points.LastUpdated = DateTime.UtcNow;
 
         var claim = new UserGiftClaim
         {

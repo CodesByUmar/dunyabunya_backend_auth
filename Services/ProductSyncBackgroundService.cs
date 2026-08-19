@@ -83,7 +83,7 @@ public class ProductSyncBackgroundService : BackgroundService
         {
             try
             {
-                var rawCount = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int FROM \"Products\"").FirstAsync(ct);
+                var rawCount = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM \"Products\"").FirstAsync(ct);
                 var connState = db.Database.GetDbConnection().State;
                 var connStr = db.Database.GetConnectionString();
                 var dbNameHint = connStr != null && connStr.Contains("Database=")
