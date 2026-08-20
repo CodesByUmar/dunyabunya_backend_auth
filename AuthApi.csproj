@@ -8,6 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- AuthApi.Tests o'z alohida loyihasi — asosiy API'ga qo'shilib ketmasligi kerak. -->
+    <Compile Remove="AuthApi.Tests\**" />
+    <Content Remove="AuthApi.Tests\**" />
+    <EmbeddedResource Remove="AuthApi.Tests\**" />
+    <None Remove="AuthApi.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
     <PackageReference Include="DnsClient" Version="1.8.0" />
     <PackageReference Include="Google.Apis.Auth" Version="1.75.0" />
