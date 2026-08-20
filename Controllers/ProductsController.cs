@@ -1,5 +1,6 @@
 using AuthApi.Data;
 using AuthApi.Filters;
+using AuthApi.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +20,7 @@ namespace AuthApi.Controllers;
 public class ProductsController : ControllerBase
 {
     private const long MaxImageBytes = 5 * 1024 * 1024; // 5 MB
+    private const int MaxGalleryImages = 8;
 
     private readonly AppDbContext _db;
 
@@ -80,6 +82,9 @@ public class ProductsController : ControllerBase
                 rating = p.Rating,
                 reviewCount = p.ReviewCount,
                 image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
+                description = p.Description,
+                images = p.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + p.Id + "/images/" + i.Id }),
+                specifications = p.Specifications.OrderBy(s => s.Order).Select(s => new { key = s.Key, value = s.Value }),
                 updatedAt = p.UpdatedAt
             })
             .FirstOrDefaultAsync();
@@ -87,6 +92,108 @@ public class ProductsController : ControllerBase
         if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
         return Ok(product);
+    }
+
+    // Tavsif ("Qanday ishlatiladi") — Odoo'da bu ma'lumot yo'q, faqat admin
+    // panel orqali qo'lda kiritiladi. Sync bu maydonga tegmaydi.
+    [RequireSection("products")]
+    [HttpPatch("{id:int}/description")]
+    public async Task<IActionResult> UpdateProductDescription(int id, UpdateProductDescriptionDto dto)
+    {
+        var product = await _db.Products.FindAsync(id);
+        if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
+
+        product.Description = dto.Description;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { description = product.Description });
+    }
+
+    // Xususiyatlar jadvali (masalan "Akkumulyator" -> "18 V Li-Ion") — butun
+    // ro'yxat bir yo'la almashtiriladi (admin panel formasi shu tarzda saqlaydi).
+    [RequireSection("products")]
+    [HttpPut("{id:int}/specifications")]
+    public async Task<IActionResult> ReplaceProductSpecifications(int id, List<ProductSpecificationDto> specifications)
+    {
+        var product = await _db.Products
+            .Include(p => p.Specifications)
+            .FirstOrDefaultAsync(p => p.Id == id);
+        if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
+
+        _db.ProductSpecifications.RemoveRange(product.Specifications);
+        product.Specifications = specifications.Select((s, index) => new ProductSpecification
+        {
+            Key = s.Key,
+            Value = s.Value,
+            Order = index
+        }).ToList();
+
+        await _db.SaveChangesAsync();
+
+        return Ok(product.Specifications.Select(s => new { key = s.Key, value = s.Value }));
+    }
+
+    // Galereya rasmi — asosiy rasmdan (POST /{id}/image) tashqari qo'shimcha
+    // rasmlar. Ro'yxat/detal javobida katta base64 yubormaslik uchun alohida
+    // endpoint orqali beriladi (asosiy rasm bilan bir xil mantiq).
+    [HttpGet("{id:int}/images/{imageId:int}")]
+    public async Task<IActionResult> GetProductGalleryImage(int id, int imageId)
+    {
+        var base64 = await _db.ProductImages
+            .Where(i => i.Id == imageId && i.ProductId == id)
+            .Select(i => i.ImageBase64)
+            .FirstOrDefaultAsync();
+
+        if (string.IsNullOrEmpty(base64)) return NotFound();
+
+        if (!TryDecodeImage(base64, out var bytes, out var contentType)) return NotFound();
+
+        return File(bytes, contentType);
+    }
+
+    [RequireSection("products")]
+    [HttpPost("{id:int}/images")]
+    [RequestSizeLimit(MaxImageBytes)]
+    public async Task<IActionResult> AddProductGalleryImage(int id, IFormFile file)
+    {
+        var product = await _db.Products
+            .Include(p => p.Images)
+            .FirstOrDefaultAsync(p => p.Id == id);
+        if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
+
+        if (product.Images.Count >= MaxGalleryImages)
+        {
+            return BadRequest(new { message = $"Bitta mahsulotga ko'pi bilan {MaxGalleryImages} ta rasm qo'shish mumkin." });
+        }
+
+        if (!TryReadValidatedImage(file, out var base64, out var error))
+        {
+            return BadRequest(new { message = error });
+        }
+
+        var image = new ProductImage
+        {
+            ProductId = id,
+            ImageBase64 = base64,
+            Order = product.Images.Count == 0 ? 0 : product.Images.Max(i => i.Order) + 1
+        };
+        _db.ProductImages.Add(image);
+        await _db.SaveChangesAsync();
+
+        return Ok(new { id = image.Id, url = $"/api/products/{id}/images/{image.Id}" });
+    }
+
+    [RequireSection("products")]
+    [HttpDelete("{id:int}/images/{imageId:int}")]
+    public async Task<IActionResult> DeleteProductGalleryImage(int id, int imageId)
+    {
+        var image = await _db.ProductImages.FirstOrDefaultAsync(i => i.Id == imageId && i.ProductId == id);
+        if (image == null) return NotFound(new { message = "Rasm topilmadi." });
+
+        _db.ProductImages.Remove(image);
+        await _db.SaveChangesAsync();
+
+        return Ok(new { message = "Rasm o'chirildi." });
     }
 
     // Odoo'dan olingan rasm — ro'yxat/detal javobida katta base64 yubormaslik uchun
@@ -100,31 +207,7 @@ public class ProductsController : ControllerBase
             .FirstOrDefaultAsync();
 
         if (string.IsNullOrEmpty(base64)) return NotFound();
-
-        byte[] bytes;
-        try
-        {
-            bytes = Convert.FromBase64String(base64);
-        }
-        catch (FormatException)
-        {
-            return NotFound();
-        }
-
-        // Format aniq saqlanmaydi — magic byte orqali JPEG/PNG/WebP farqlaymiz.
-        string contentType;
-        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8)
-        {
-            contentType = "image/jpeg";
-        }
-        else if (bytes.Length >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46)
-        {
-            contentType = "image/webp";
-        }
-        else
-        {
-            contentType = "image/png";
-        }
+        if (!TryDecodeImage(base64, out var bytes, out var contentType)) return NotFound();
 
         return File(bytes, contentType);
     }
@@ -139,32 +222,12 @@ public class ProductsController : ControllerBase
         var product = await _db.Products.FindAsync(id);
         if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
-        if (file == null || file.Length == 0)
+        if (!TryReadValidatedImage(file, out var base64, out var error))
         {
-            return BadRequest(new { message = "Rasm fayli yuborilmadi." });
+            return BadRequest(new { message = error });
         }
 
-        if (file.Length > MaxImageBytes)
-        {
-            return BadRequest(new { message = "Rasm hajmi 5 MB dan oshmasligi kerak." });
-        }
-
-        using var ms = new MemoryStream();
-        await file.CopyToAsync(ms);
-        var bytes = ms.ToArray();
-
-        // Haqiqiy rasm ekanini magic byte orqali tekshiramiz (fayl kengaytmasiga ishonib bo'lmaydi).
-        var isJpeg = bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
-        var isPng = bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47;
-        var isWebp = bytes.Length >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
-            && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50;
-
-        if (!isJpeg && !isPng && !isWebp)
-        {
-            return BadRequest(new { message = "Faqat JPEG, PNG yoki WebP formatidagi rasm qabul qilinadi." });
-        }
-
-        product.ImageBase64 = Convert.ToBase64String(bytes);
+        product.ImageBase64 = base64;
         await _db.SaveChangesAsync();
 
         return Ok(new { image = $"/api/products/{id}/image" });
@@ -181,5 +244,73 @@ public class ProductsController : ControllerBase
         await _db.SaveChangesAsync();
 
         return Ok(new { message = "Rasm o'chirildi." });
+    }
+
+    // Fayldan baytlarni o'qiydi, hajm va haqiqiy rasm formatini (magic byte
+    // orqali, fayl kengaytmasiga ishonmasdan) tekshiradi.
+    private static bool TryReadValidatedImage(IFormFile? file, out string base64, out string error)
+    {
+        base64 = string.Empty;
+        error = string.Empty;
+
+        if (file == null || file.Length == 0)
+        {
+            error = "Rasm fayli yuborilmadi.";
+            return false;
+        }
+
+        if (file.Length > MaxImageBytes)
+        {
+            error = "Rasm hajmi 5 MB dan oshmasligi kerak.";
+            return false;
+        }
+
+        using var ms = new MemoryStream();
+        file.CopyTo(ms);
+        var bytes = ms.ToArray();
+
+        if (!IsSupportedImage(bytes))
+        {
+            error = "Faqat JPEG, PNG yoki WebP formatidagi rasm qabul qilinadi.";
+            return false;
+        }
+
+        base64 = Convert.ToBase64String(bytes);
+        return true;
+    }
+
+    private static bool IsSupportedImage(byte[] bytes)
+    {
+        var isJpeg = bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
+        var isPng = bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47;
+        var isWebp = bytes.Length >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
+            && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50;
+        return isJpeg || isPng || isWebp;
+    }
+
+    private static bool TryDecodeImage(string base64, out byte[] bytes, out string contentType)
+    {
+        contentType = "image/png";
+        try
+        {
+            bytes = Convert.FromBase64String(base64);
+        }
+        catch (FormatException)
+        {
+            bytes = [];
+            return false;
+        }
+
+        // Format aniq saqlanmaydi — magic byte orqali JPEG/PNG/WebP farqlaymiz.
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8)
+        {
+            contentType = "image/jpeg";
+        }
+        else if (bytes.Length >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46)
+        {
+            contentType = "image/webp";
+        }
+
+        return true;
     }
 }

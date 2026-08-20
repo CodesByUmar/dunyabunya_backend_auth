@@ -11,6 +11,8 @@ public class AppDbContext : DbContext
 
     public DbSet<User> Users { get; set; }
     public DbSet<Product> Products { get; set; }
+    public DbSet<ProductImage> ProductImages { get; set; }
+    public DbSet<ProductSpecification> ProductSpecifications { get; set; }
     public DbSet<Category> Categories { get; set; }
     public DbSet<Subcategory> Subcategories { get; set; }
     public DbSet<Service> Services { get; set; }
@@ -50,6 +52,14 @@ public class AppDbContext : DbContext
             entity.HasIndex(p => p.OdooTemplateId);
             entity.Property(p => p.Price).HasColumnType("numeric(18,2)");
             entity.Property(p => p.Cost).HasColumnType("numeric(18,2)");
+            entity.HasMany(p => p.Images)
+                .WithOne(i => i.Product)
+                .HasForeignKey(i => i.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(p => p.Specifications)
+                .WithOne(s => s.Product)
+                .HasForeignKey(s => s.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Category>(entity =>

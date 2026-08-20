@@ -461,6 +461,9 @@ namespace AuthApi.Migrations
                     b.Property<string>("DefaultCode")
                         .HasColumnType("text");
 
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
                     b.Property<string>("ImageBase64")
                         .HasColumnType("text");
 
@@ -497,6 +500,63 @@ namespace AuthApi.Migrations
                     b.HasIndex("OdooTemplateId");
 
                     b.ToTable("Products");
+                });
+
+            modelBuilder.Entity("AuthApi.Models.ProductImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ImageBase64")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ProductImages");
+                });
+
+            modelBuilder.Entity("AuthApi.Models.ProductSpecification", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ProductSpecifications");
                 });
 
             modelBuilder.Entity("AuthApi.Models.Review", b =>
@@ -833,6 +893,28 @@ namespace AuthApi.Migrations
                     b.Navigation("Order");
                 });
 
+            modelBuilder.Entity("AuthApi.Models.ProductImage", b =>
+                {
+                    b.HasOne("AuthApi.Models.Product", "Product")
+                        .WithMany("Images")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("AuthApi.Models.ProductSpecification", b =>
+                {
+                    b.HasOne("AuthApi.Models.Product", "Product")
+                        .WithMany("Specifications")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("AuthApi.Models.Subcategory", b =>
                 {
                     b.HasOne("AuthApi.Models.Category", "Category")
@@ -852,6 +934,13 @@ namespace AuthApi.Migrations
             modelBuilder.Entity("AuthApi.Models.Order", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("AuthApi.Models.Product", b =>
+                {
+                    b.Navigation("Images");
+
+                    b.Navigation("Specifications");
                 });
 #pragma warning restore 612, 618
         }

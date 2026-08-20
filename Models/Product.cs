@@ -32,6 +32,38 @@ public class Product
     // (katta JSON payload'dan qochish uchun), rasm alohida endpoint orqali beriladi.
     public string? ImageBase64 { get; set; }
 
+    // Odoo'da bu mahsulotlar uchun tavsif/xususiyat kiritilmagan (tekshirilgan),
+    // shuning uchun admin panel orqali qo'lda to'ldiriladi — sync bu maydonga
+    // tegmaydi (rasm kabi xavfsiz).
+    public string? Description { get; set; }
+
+    public List<ProductImage> Images { get; set; } = new();
+    public List<ProductSpecification> Specifications { get; set; } = new();
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// Asosiy rasmdan tashqari qo'shimcha galereya rasmlari — faqat admin panel
+// (yoki "products" ruxsatiga ega Superuser) orqali qo'lda qo'shiladi/o'chiriladi.
+public class ProductImage
+{
+    public int Id { get; set; }
+    public int ProductId { get; set; }
+    public Product Product { get; set; } = null!;
+    public string ImageBase64 { get; set; } = string.Empty;
+    public int Order { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// Xususiyatlar jadvali (masalan "Akkumulyator" -> "18 V Li-Ion") — Odoo'da
+// mavjud emas, faqat admin panel orqali qo'lda kiritiladi.
+public class ProductSpecification
+{
+    public int Id { get; set; }
+    public int ProductId { get; set; }
+    public Product Product { get; set; } = null!;
+    public string Key { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public int Order { get; set; }
 }
