@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<Partner> Partners { get; set; }
     public DbSet<Banner> Banners { get; set; }
     public DbSet<Review> Reviews { get; set; }
+    public DbSet<ReviewVote> ReviewVotes { get; set; }
     public DbSet<ServiceReview> ServiceReviews { get; set; }
     public DbSet<ContactMessage> ContactMessages { get; set; }
     public DbSet<Notification> Notifications { get; set; }
@@ -79,6 +80,14 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Review>(entity =>
         {
             entity.HasIndex(r => r.ProductId);
+        });
+
+        // Bitta foydalanuvchi bitta sharhga faqat bitta ovoz bera oladi —
+        // bazadagi ushbu UNIQUE cheklov bo'lmasa, tezkor ketma-ket bosishlar
+        // (yoki poyga holati) bir xil userdan bir nechta ovoz yozib qo'yishi mumkin edi.
+        modelBuilder.Entity<ReviewVote>(entity =>
+        {
+            entity.HasIndex(v => new { v.ReviewId, v.UserId }).IsUnique();
         });
 
         modelBuilder.Entity<Notification>(entity =>

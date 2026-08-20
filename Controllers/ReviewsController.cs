@@ -68,6 +68,91 @@ public class ReviewsController : ControllerBase
         return Ok(review);
     }
 
+    // Oddiy mijozning like/dislike bosishi. Bir foydalanuvchi bir sharhga
+    // faqat bitta ovoz bera oladi (ReviewVote'dagi UNIQUE (ReviewId, UserId)
+    // orqali bazada ham majburlangan): birinchi bosish — ovoz qo'shadi, xuddi
+    // shu turdagi ovozni qayta bosish — bekor qiladi (toggle), boshqa turini
+    // bosish — ovozni almashtiradi. Sonlar atomik SQL orqali o'zgaradi, shuning
+    // uchun bir vaqtda kelgan bir nechta so'rov ham noto'g'ri sanoqqa olib kelmaydi.
+    [Authorize]
+    [HttpPost("{id:int}/vote")]
+    public async Task<IActionResult> VoteReview(int id, VoteReviewDto dto)
+    {
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+
+        if (dto.Type != "like" && dto.Type != "dislike")
+        {
+            return BadRequest(new { message = "Ovoz turi \"like\" yoki \"dislike\" bo'lishi kerak." });
+        }
+
+        var reviewExists = await _db.Reviews.AnyAsync(r => r.Id == id);
+        if (!reviewExists) return NotFound(new { message = "Sharh topilmadi." });
+
+        var existingVote = await _db.ReviewVotes.FirstOrDefaultAsync(v => v.ReviewId == id && v.UserId == userId.Value);
+
+        if (existingVote == null)
+        {
+            // Birinchi ovoz — qo'shamiz va hisoblagichni oshiramiz.
+            try
+            {
+                _db.ReviewVotes.Add(new ReviewVote { ReviewId = id, UserId = userId.Value, Type = dto.Type });
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // Bir vaqtda kelgan ikkinchi so'rov UNIQUE cheklovga uchradi — demak
+                // ovoz allaqachon yozilgan, xatoni yutib, oddiy holatni qaytaramiz.
+                return await GetVoteStateAsync(id, userId.Value);
+            }
+
+            await IncrementAsync(id, dto.Type, +1);
+        }
+        else if (existingVote.Type == dto.Type)
+        {
+            // Xuddi shu ovozni qayta bosish — bekor qilish (toggle off).
+            _db.ReviewVotes.Remove(existingVote);
+            await _db.SaveChangesAsync();
+            await IncrementAsync(id, dto.Type, -1);
+        }
+        else
+        {
+            // Boshqa turdagi ovozga almashtirish.
+            var oldType = existingVote.Type;
+            existingVote.Type = dto.Type;
+            await _db.SaveChangesAsync();
+            await IncrementAsync(id, oldType, -1);
+            await IncrementAsync(id, dto.Type, +1);
+        }
+
+        return await GetVoteStateAsync(id, userId.Value);
+    }
+
+    private async Task IncrementAsync(int reviewId, string type, int delta)
+    {
+        if (type == "like")
+        {
+            await _db.Reviews.Where(r => r.Id == reviewId)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.Likes, r => r.Likes + delta));
+        }
+        else
+        {
+            await _db.Reviews.Where(r => r.Id == reviewId)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.Dislikes, r => r.Dislikes + delta));
+        }
+    }
+
+    private async Task<IActionResult> GetVoteStateAsync(int reviewId, int userId)
+    {
+        var review = await _db.Reviews.AsNoTracking().FirstAsync(r => r.Id == reviewId);
+        var myVote = await _db.ReviewVotes.AsNoTracking()
+            .Where(v => v.ReviewId == reviewId && v.UserId == userId)
+            .Select(v => v.Type)
+            .FirstOrDefaultAsync();
+
+        return Ok(new { likes = review.Likes, dislikes = review.Dislikes, myVote });
+    }
+
     [RequireSection("reviews")]
     [HttpPatch("{id:int}")]
     public async Task<IActionResult> UpdateReview(int id, UpdateReviewDto dto)

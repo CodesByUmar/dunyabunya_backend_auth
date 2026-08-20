@@ -20,6 +20,13 @@ public class UpdateReviewDto
     public int? Dislikes { get; set; }
 }
 
+// Oddiy mijozning like/dislike bosishi uchun — UpdateReviewDto'dan farqli
+// o'laroq, son to'g'ridan-to'g'ri berilmaydi, faqat "like" | "dislike" turi.
+public class VoteReviewDto
+{
+    public string Type { get; set; } = string.Empty;
+}
+
 public class CreateServiceReviewDto
 {
     public int Rating { get; set; }

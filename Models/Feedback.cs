@@ -21,6 +21,17 @@ public class Review
     public string? Reply { get; set; }
 }
 
+// Bitta foydalanuvchining bitta sharhga bergan ovozi — takroriy/ikki marta
+// ovoz berishning oldini olish va qayta bossa bekor qilish (toggle) uchun.
+public class ReviewVote
+{
+    public int Id { get; set; }
+    public int ReviewId { get; set; }
+    public int UserId { get; set; }
+    public string Type { get; set; } = string.Empty; // "like" | "dislike"
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 // Sotuvdan keyingi xizmat baholash (buyurtmaga emas, umumiy xizmatga).
 public class ServiceReview
 {
