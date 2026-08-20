@@ -48,6 +48,9 @@ builder.Services.AddHttpClient<IOdooProductService, OdooProductService>((sp, cli
     var timeoutSeconds = double.TryParse(config["Odoo:ProductTimeoutSeconds"], out var t) ? t : 30;
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
 });
+builder.Services.AddHttpClient();
+builder.Services.AddHostedService<HeartbeatBackgroundService>();
+
 // Product:SyncEnabled=false orqali vaqtincha o'chirish mumkin — masalan bazadan
 // takroriy noto'g'ri bo'sh natija qaytib, mahsulot ID'lari beqaror bo'lib qolsa,
 // sababi tekshirilayotgan vaqtda fon jarayonini to'xtatib turish uchun.
@@ -148,6 +151,20 @@ builder.Services.AddRateLimiter(options =>
                 PermitLimit = 20,
                 Window = TimeSpan.FromMinutes(15),
                 SegmentsPerWindow = 3,
+                QueueLimit = 0
+            }));
+
+    // Barcha so'rovlarga (shu jumladan ochiq GET endpointlarga — Products,
+    // Categories va h.k.) tegishli umumiy himoya qatlami. Auth endpointlar
+    // yuqoridagi qattiqroq AuthPolicy bilan qo'shimcha himoyalangan.
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 600,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 4,
                 QueueLimit = 0
             }));
 
