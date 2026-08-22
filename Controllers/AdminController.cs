@@ -48,6 +48,37 @@ public class AdminController : ControllerBase
         return Ok(users);
     }
 
+    // Bitta mijozning "Mijoz tafsilotlari" sahifasi uchun qo'shimcha,
+    // hisoblab chiqariladigan statistika — asosiy ro'yxatni (GetUsers)
+    // og'irlashtirmaslik uchun alohida, faqat kerak bo'lganda so'raladi.
+    [HttpGet("users/{id:int}/stats")]
+    public async Task<IActionResult> GetUserStats(int id)
+    {
+        var userExists = await _db.Users.AnyAsync(u => u.Id == id);
+        if (!userExists) return NotFound(new { message = "Foydalanuvchi topilmadi." });
+
+        var orderStats = await _db.Orders
+            .Where(o => o.UserId == id)
+            .GroupBy(o => 1)
+            .Select(g => new { Count = g.Count(), Total = g.Sum(o => o.Total), LastDate = g.Max(o => o.Date) })
+            .FirstOrDefaultAsync();
+
+        var points = await _db.UserPoints.FirstOrDefaultAsync(p => p.UserId == id);
+        var reviewCount = await _db.Reviews.CountAsync(r => r.UserId == id);
+        var giftClaimCount = await _db.UserGiftClaims.CountAsync(c => c.UserId == id);
+
+        return Ok(new
+        {
+            orderCount = orderStats?.Count ?? 0,
+            totalSpent = orderStats?.Total ?? 0,
+            lastOrderDate = orderStats?.LastDate,
+            pointsBalance = points?.Balance ?? 0,
+            totalPointsEarned = points?.TotalEarned ?? 0,
+            reviewCount,
+            giftClaimCount
+        });
+    }
+
     // Admin boshqa foydalanuvchining rolini o'zgartirishi uchun (masalan
     // birovni Admin qilib tayinlash).
     [HttpPatch("users/{id}/role")]

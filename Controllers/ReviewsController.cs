@@ -14,6 +14,16 @@ namespace AuthApi.Controllers;
 [Route("api/[controller]")]
 public class ReviewsController : ControllerBase
 {
+    private const long MaxImageBytes = 5 * 1024 * 1024; // 5 MB
+    private const int MaxPhotosPerReview = 5;
+
+    // Sharh fotosuratlari ham bazaga (base64) emas, diskka saqlanadi. Fayl
+    // sharh yaratilishidan OLDIN yuklanadi (mijoz avval rasmlarni tanlaydi,
+    // keyin sharhni yuboradi), shuning uchun ReviewId'ga emas, tasodifiy
+    // (Guid) nomga bog'lanadi — sharh yaratilganda shu URL'lar Photos
+    // massiviga shunchaki matn sifatida saqlanadi.
+    private static readonly string UploadsRoot = Path.Combine(AppContext.BaseDirectory, "uploads", "review-photos");
+
     private readonly AppDbContext _db;
     public ReviewsController(AppDbContext db) => _db = db;
 
@@ -43,6 +53,11 @@ public class ReviewsController : ControllerBase
         if (dto.Rating < 1 || dto.Rating > 5)
         {
             return BadRequest(new { message = "Baho 1 dan 5 gacha bo'lishi kerak." });
+        }
+
+        if (dto.Photos != null && dto.Photos.Length > MaxPhotosPerReview)
+        {
+            return BadRequest(new { message = $"Bitta sharhga ko'pi bilan {MaxPhotosPerReview} ta rasm qo'shish mumkin." });
         }
 
         var review = new Review
@@ -151,6 +166,83 @@ public class ReviewsController : ControllerBase
             .FirstOrDefaultAsync();
 
         return Ok(new { likes = review.Likes, dislikes = review.Dislikes, myVote });
+    }
+
+    // Sharh yozishdan OLDIN chaqiriladi — mijoz rasm(lar)ni tanlaydi, har
+    // biri shu yerga yuklanadi, qaytgan URL keyin CreateReview'ning Photos
+    // massiviga qo'shiladi. Autentifikatsiya talab qilinadi (anonim spam'ning
+    // oldini olish uchun), lekin "reviews" ruxsati kerak emas — istalgan
+    // login qilingan mijoz o'z sharhi uchun rasm yuklay oladi.
+    [Authorize]
+    [HttpPost("photos")]
+    [RequestSizeLimit(MaxImageBytes)]
+    public async Task<IActionResult> UploadReviewPhoto(IFormFile file)
+    {
+        if (!TryReadValidatedImage(file, out var bytes, out var error))
+        {
+            return BadRequest(new { message = error });
+        }
+
+        Directory.CreateDirectory(UploadsRoot);
+        var id = Guid.NewGuid().ToString("N");
+        await System.IO.File.WriteAllBytesAsync(Path.Combine(UploadsRoot, id), bytes);
+
+        return Ok(new { url = $"/api/reviews/photos/{id}" });
+    }
+
+    [HttpGet("photos/{id}")]
+    public async Task<IActionResult> GetReviewPhoto(string id)
+    {
+        // Guid.TryParse orqali yo'l traversal (../..) ehtimolini butunlay yopamiz.
+        if (!Guid.TryParseExact(id, "N", out _)) return NotFound();
+
+        var path = Path.Combine(UploadsRoot, id);
+        if (!System.IO.File.Exists(path)) return NotFound();
+
+        var bytes = await System.IO.File.ReadAllBytesAsync(path);
+        return new FileContentResult(bytes, DetectContentType(bytes));
+    }
+
+    private static bool TryReadValidatedImage(IFormFile? file, out byte[] bytes, out string error)
+    {
+        bytes = [];
+        error = string.Empty;
+
+        if (file == null || file.Length == 0)
+        {
+            error = "Rasm fayli yuborilmadi.";
+            return false;
+        }
+
+        if (file.Length > MaxImageBytes)
+        {
+            error = "Rasm hajmi 5 MB dan oshmasligi kerak.";
+            return false;
+        }
+
+        using var ms = new MemoryStream();
+        file.CopyTo(ms);
+        bytes = ms.ToArray();
+
+        var isJpeg = bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
+        var isPng = bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47;
+        var isWebp = bytes.Length >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
+            && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50;
+
+        if (!isJpeg && !isPng && !isWebp)
+        {
+            error = "Faqat JPEG, PNG yoki WebP formatidagi rasm qabul qilinadi.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string DetectContentType(byte[] bytes)
+    {
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8) return "image/jpeg";
+        if (bytes.Length >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) return "image/webp";
+        return "image/png";
     }
 
     [RequireSection("reviews")]
