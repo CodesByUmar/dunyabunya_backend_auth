@@ -278,12 +278,23 @@ public class ReviewsController : ControllerBase
         return Ok(review);
     }
 
-    [RequireSection("reviews")]
+    // Sharh egasi o'zi o'chira oladi (moderatsiya ruxsati shart emas);
+    // boshqa moderatorlar (Admin/"reviews" ruxsatli Superuser) esa
+    // istalgan sharhni o'chira oladi — xuddi avvalgidek.
+    [Authorize]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteReview(int id)
     {
         var review = await _db.Reviews.FindAsync(id);
         if (review == null) return NotFound(new { message = "Sharh topilmadi." });
+
+        var userId = GetUserId();
+        var isOwner = userId.HasValue && review.UserId == userId.Value;
+
+        if (!isOwner && !CanModerateReviews())
+        {
+            return Forbid();
+        }
 
         var productId = review.ProductId;
         _db.Reviews.Remove(review);
@@ -292,6 +303,16 @@ public class ReviewsController : ControllerBase
         await RecalculateProductRatingAsync(productId);
 
         return Ok(new { message = "O'chirildi." });
+    }
+
+    private bool CanModerateReviews()
+    {
+        if (User.IsInRole("Admin")) return true;
+        if (!User.IsInRole("Superuser")) return false;
+
+        var permissions = User.FindFirstValue("permissions")?
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+        return permissions.Contains("reviews");
     }
 
     private async Task RecalculateProductRatingAsync(int productId)
