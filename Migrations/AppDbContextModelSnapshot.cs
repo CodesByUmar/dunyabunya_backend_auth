@@ -911,6 +911,31 @@ namespace AuthApi.Migrations
                     b.ToTable("UserPoints");
                 });
 
+            modelBuilder.Entity("AuthApi.Models.WishlistItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("WishlistItems");
+                });
+
             modelBuilder.Entity("AuthApi.Models.OrderItem", b =>
                 {
                     b.HasOne("AuthApi.Models.Order", "Order")

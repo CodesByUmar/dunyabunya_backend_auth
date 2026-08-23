@@ -31,6 +31,7 @@ public class AppDbContext : DbContext
     public DbSet<UserPoints> UserPoints { get; set; }
     public DbSet<GiftCampaign> GiftCampaigns { get; set; }
     public DbSet<UserGiftClaim> UserGiftClaims { get; set; }
+    public DbSet<WishlistItem> WishlistItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -118,6 +119,13 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<UserGiftClaim>(entity =>
         {
             entity.HasIndex(c => c.UserId);
+        });
+
+        // Bitta foydalanuvchi bitta mahsulotni sevimlilarga faqat bir marta
+        // qo'sha oladi — takroriy yozuvlarning oldini olish uchun.
+        modelBuilder.Entity<WishlistItem>(entity =>
+        {
+            entity.HasIndex(w => new { w.UserId, w.ProductId }).IsUnique();
         });
     }
 }
