@@ -6,7 +6,7 @@ public static class AdminSections
 {
     public static readonly string[] All =
     {
-        "analytics", "products", "reviews", "orders", "customers", "gifts", "campaigns", "banners", "users"
+        "analytics", "products", "reviews", "orders", "customers", "gifts", "campaigns", "banners", "users", "coupons"
     };
 
     // Superuserga berilishi mumkin bo'lgan bo'limlar — analytics bundan mustasno

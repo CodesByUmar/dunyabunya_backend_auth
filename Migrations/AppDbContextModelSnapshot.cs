@@ -201,6 +201,87 @@ namespace AuthApi.Migrations
                     b.ToTable("ContactMessages");
                 });
 
+            modelBuilder.Entity("AuthApi.Models.Coupon", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DiscountType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("DiscountValue")
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal?>("MaxDiscountAmount")
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal?>("MinOrderAmount")
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int>("PerUserLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("UsageLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UsedCount")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Coupons");
+                });
+
+            modelBuilder.Entity("AuthApi.Models.CouponRedemption", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CouponId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CouponId", "UserId");
+
+                    b.ToTable("CouponRedemptions");
+                });
+
             modelBuilder.Entity("AuthApi.Models.GiftCampaign", b =>
                 {
                     b.Property<int>("Id")
@@ -323,6 +404,9 @@ namespace AuthApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("CouponCode")
+                        .HasColumnType("text");
+
                     b.Property<string>("CustomerAddress")
                         .IsRequired()
                         .HasColumnType("text");
@@ -344,6 +428,9 @@ namespace AuthApi.Migrations
 
                     b.Property<string>("DeliveryMethod")
                         .HasColumnType("text");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<double?>("Lat")
                         .HasColumnType("double precision");

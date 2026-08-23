@@ -17,6 +17,8 @@ public class CreateOrderDto
 
     public List<CreateOrderItemDto> Items { get; set; } = new();
 
+    public string? CouponCode { get; set; }
+
     public string PaymentMethod { get; set; } = string.Empty;
     public string? DeliveryMethod { get; set; }
     public string? PickupBranchId { get; set; }

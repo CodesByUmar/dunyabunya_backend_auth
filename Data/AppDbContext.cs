@@ -33,6 +33,8 @@ public class AppDbContext : DbContext
     public DbSet<UserGiftClaim> UserGiftClaims { get; set; }
     public DbSet<WishlistItem> WishlistItems { get; set; }
     public DbSet<Property> Properties { get; set; }
+    public DbSet<Coupon> Coupons { get; set; }
+    public DbSet<CouponRedemption> CouponRedemptions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -101,6 +103,7 @@ public class AppDbContext : DbContext
         {
             entity.HasIndex(o => o.UserId);
             entity.Property(o => o.Total).HasColumnType("numeric(18,2)");
+            entity.Property(o => o.DiscountAmount).HasColumnType("numeric(18,2)");
             entity.HasMany(o => o.Items)
                 .WithOne(i => i.Order)
                 .HasForeignKey(i => i.OrderId)
@@ -132,6 +135,20 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Property>(entity =>
         {
             entity.HasIndex(p => p.UserId);
+        });
+
+        modelBuilder.Entity<Coupon>(entity =>
+        {
+            entity.HasIndex(c => c.Code).IsUnique();
+            entity.Property(c => c.DiscountValue).HasColumnType("numeric(18,2)");
+            entity.Property(c => c.MaxDiscountAmount).HasColumnType("numeric(18,2)");
+            entity.Property(c => c.MinOrderAmount).HasColumnType("numeric(18,2)");
+        });
+
+        modelBuilder.Entity<CouponRedemption>(entity =>
+        {
+            entity.HasIndex(r => new { r.CouponId, r.UserId });
+            entity.Property(r => r.DiscountAmount).HasColumnType("numeric(18,2)");
         });
     }
 }

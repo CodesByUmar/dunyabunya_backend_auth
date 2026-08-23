@@ -14,7 +14,9 @@ public class Order
     public double? Lat { get; set; }
     public double? Lng { get; set; }
 
-    public decimal Total { get; set; }
+    public decimal Total { get; set; } // chegirmadan KEYINGI, haqiqiy to'lanadigan summa
+    public string? CouponCode { get; set; }
+    public decimal DiscountAmount { get; set; }
     public string Status { get; set; } = "pending"; // pending|processing|shipped|delivered|cancelled|received
     public DateTime Date { get; set; } = DateTime.UtcNow;
     public string PaymentMethod { get; set; } = string.Empty;

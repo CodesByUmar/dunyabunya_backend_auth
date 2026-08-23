@@ -2,6 +2,7 @@ using System.Security.Claims;
 using AuthApi.Data;
 using AuthApi.Filters;
 using AuthApi.Models;
+using AuthApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -98,6 +99,39 @@ public class OrdersController : ControllerBase
             total += product.Price * itemDto.Quantity;
         }
 
+        decimal discountAmount = 0;
+        Coupon? coupon = null;
+        string? appliedCouponCode = null;
+
+        if (!string.IsNullOrWhiteSpace(dto.CouponCode))
+        {
+            var (foundCoupon, error) = await CouponService.FindValidCouponAsync(_db, dto.CouponCode, total, userId.Value);
+            if (foundCoupon == null)
+            {
+                return BadRequest(new { message = error });
+            }
+
+            coupon = foundCoupon;
+            appliedCouponCode = foundCoupon.Code;
+            discountAmount = CouponService.CalculateDiscount(foundCoupon, total);
+
+            // Kuponni atomik ravishda "sarflaymiz" — bir vaqtda ko'p so'rov kelsa
+            // ham umumiy UsageLimit'dan oshib ketmasligi uchun shartli UPDATE va
+            // ta'sirlangan qatorlar sonini tekshirish orqali (mahsulot/ball
+            // yangilanishlarida ishlatilgan xuddi shu naqsh).
+            var affected = await _db.Database.ExecuteSqlInterpolatedAsync($@"
+                UPDATE ""Coupons"" SET ""UsedCount"" = ""UsedCount"" + 1
+                WHERE ""Id"" = {coupon.Id} AND ""IsActive"" = true
+                  AND (""UsageLimit"" IS NULL OR ""UsedCount"" < ""UsageLimit"")");
+
+            if (affected == 0)
+            {
+                return BadRequest(new { message = "Kupon limiti tugagan." });
+            }
+
+            total -= discountAmount;
+        }
+
         var order = new Order
         {
             UserId = userId.Value,
@@ -108,6 +142,8 @@ public class OrdersController : ControllerBase
             Lat = dto.Lat,
             Lng = dto.Lng,
             Total = total,
+            CouponCode = appliedCouponCode,
+            DiscountAmount = discountAmount,
             Status = "pending",
             PaymentMethod = dto.PaymentMethod,
             DeliveryMethod = dto.DeliveryMethod,
@@ -120,6 +156,18 @@ public class OrdersController : ControllerBase
 
         _db.Orders.Add(order);
         await _db.SaveChangesAsync();
+
+        if (coupon != null)
+        {
+            _db.CouponRedemptions.Add(new CouponRedemption
+            {
+                CouponId = coupon.Id,
+                UserId = userId.Value,
+                OrderId = order.Id,
+                DiscountAmount = discountAmount
+            });
+            await _db.SaveChangesAsync();
+        }
 
         // Har 100 000 so'mga 1 ball — server ichida avtomatik qo'shiladi,
         // mijoz ballarni to'g'ridan-to'g'ri o'zgartira olmaydi.
@@ -244,6 +292,9 @@ public class OrdersController : ControllerBase
             lng = o.Lng
         },
         items = o.Items.Select(i => new { productId = i.ProductId, name = i.Name, quantity = i.Quantity, price = i.Price }),
+        subtotal = o.Total + o.DiscountAmount,
+        couponCode = o.CouponCode,
+        discountAmount = o.DiscountAmount,
         total = o.Total,
         status = o.Status,
         date = o.Date,
