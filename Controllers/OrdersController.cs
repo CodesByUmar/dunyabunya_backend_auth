@@ -149,6 +149,51 @@ public class OrdersController : ControllerBase
         return Ok(Project(order));
     }
 
+    // Mijozning o'zi o'z buyurtmasini bekor qilishi uchun — admin ruxsati
+    // shart emas, lekin faqat hali jo'natilmagan (pending/processing)
+    // buyurtmani bekor qila oladi va faqat O'Z buyurtmasini.
+    [HttpPatch("{id:int}/cancel")]
+    public async Task<IActionResult> CancelOrder(int id)
+    {
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+
+        var order = await _db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id);
+        if (order == null) return NotFound(new { message = "Buyurtma topilmadi." });
+
+        if (order.UserId != userId.Value)
+        {
+            return Forbid();
+        }
+
+        if (order.Status != "pending" && order.Status != "processing")
+        {
+            return BadRequest(new { message = "Bu buyurtmani endi bekor qilib bo'lmaydi." });
+        }
+
+        order.Status = "cancelled";
+        await _db.SaveChangesAsync();
+
+        // Buyurtma yaratilganda avtomatik qo'shilgan ballarni qaytarib olish —
+        // aks holda mijoz "buyurtma berib-bekor qilish"ni takrorlab, cheksiz
+        // ball hosil qilishi mumkin edi. GREATEST(...,0) — agar ball allaqachon
+        // (masalan sovg'aga) sarflab bo'lingan bo'lsa, manfiy balansga tushirmaydi.
+        var pointsToRevert = (int)Math.Floor(order.Total / 100_000m);
+        if (pointsToRevert > 0)
+        {
+            var now = DateTime.UtcNow;
+            await _db.Database.ExecuteSqlInterpolatedAsync($@"
+                UPDATE ""UserPoints"" SET
+                    ""Balance"" = GREATEST(""Balance"" - {pointsToRevert}, 0),
+                    ""TotalEarned"" = GREATEST(""TotalEarned"" - {pointsToRevert}, 0),
+                    ""YearPoints"" = GREATEST(""YearPoints"" - {pointsToRevert}, 0),
+                    ""LastUpdated"" = {now}
+                WHERE ""UserId"" = {order.UserId}");
+        }
+
+        return Ok(Project(order));
+    }
+
     [RequireSection("orders")]
     [HttpPatch("{id:int}")]
     public async Task<IActionResult> UpdateOrder(int id, UpdateOrderDto dto)
