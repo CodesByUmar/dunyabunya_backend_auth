@@ -31,6 +31,21 @@ public class NotificationsController : ControllerBase
         return Ok(notifications);
     }
 
+    // Bildirishnomalar ro'yxati ustidagi "Hammasini o'qildi qilish" tugmasi
+    // uchun — bittalab PATCH so'rov yubormasdan, bitta atomik so'rov bilan.
+    [HttpPatch("read-all")]
+    public async Task<IActionResult> MarkAllAsRead()
+    {
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+
+        var updated = await _db.Notifications
+            .Where(n => n.UserId == userId.Value && !n.IsRead)
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsRead, true));
+
+        return Ok(new { updated });
+    }
+
     [HttpPatch("{id:int}")]
     public async Task<IActionResult> MarkAsRead(int id)
     {
