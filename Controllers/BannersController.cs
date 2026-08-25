@@ -28,6 +28,14 @@ public class BannersController : ControllerBase
         return Ok(await query.OrderBy(b => b.Order).ToListAsync());
     }
 
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var entity = await _db.Banners.FindAsync(id);
+        if (entity == null) return NotFound(new { message = "Banner topilmadi." });
+        return Ok(entity);
+    }
+
     [RequireSection("banners")]
     [HttpPost]
     public async Task<IActionResult> Create(BannerDto dto)

@@ -18,6 +18,14 @@ public class ServicesController : ControllerBase
     public async Task<IActionResult> GetAll() =>
         Ok(await _db.Services.OrderBy(s => s.Order).ToListAsync());
 
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var entity = await _db.Services.FindAsync(id);
+        if (entity == null) return NotFound(new { message = "Xizmat topilmadi." });
+        return Ok(entity);
+    }
+
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> Create(ServiceDto dto)

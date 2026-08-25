@@ -29,6 +29,15 @@ public class CouponsController : ControllerBase
     }
 
     [RequireSection("coupons")]
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var entity = await _db.Coupons.FindAsync(id);
+        if (entity == null) return NotFound(new { message = "Kupon topilmadi." });
+        return Ok(entity);
+    }
+
+    [RequireSection("coupons")]
     [HttpPost]
     public async Task<IActionResult> Create(CreateCouponDto dto)
     {

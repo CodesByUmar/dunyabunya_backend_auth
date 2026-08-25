@@ -18,6 +18,14 @@ public class StatsController : ControllerBase
     public async Task<IActionResult> GetAll() =>
         Ok(await _db.Stats.OrderBy(s => s.Order).ToListAsync());
 
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var entity = await _db.Stats.FindAsync(id);
+        if (entity == null) return NotFound(new { message = "Statistika topilmadi." });
+        return Ok(entity);
+    }
+
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> Create(StatDto dto)

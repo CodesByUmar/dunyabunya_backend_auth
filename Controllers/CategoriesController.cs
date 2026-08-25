@@ -53,6 +53,33 @@ public class CategoriesController : ControllerBase
         return Ok(categories);
     }
 
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetCategory(int id)
+    {
+        var category = await _db.Categories
+            .Where(c => c.Id == id)
+            .Select(c => new
+            {
+                c.Id,
+                c.Name,
+                c.Slug,
+                c.Image,
+                c.Order,
+                Subcategories = c.Subcategories.OrderBy(s => s.Order).Select(s => new
+                {
+                    s.Id,
+                    s.Name,
+                    s.Slug,
+                    s.Image,
+                    s.Order
+                })
+            })
+            .FirstOrDefaultAsync();
+
+        if (category == null) return NotFound(new { message = "Kategoriya topilmadi." });
+        return Ok(category);
+    }
+
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> CreateCategory(CategoryDto dto)

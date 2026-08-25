@@ -23,6 +23,14 @@ public class GiftCampaignsController : ControllerBase
         return Ok(await query.OrderByDescending(c => c.SelectionStartDate).ToListAsync());
     }
 
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var entity = await _db.GiftCampaigns.FindAsync(id);
+        if (entity == null) return NotFound(new { message = "Aksiya topilmadi." });
+        return Ok(entity);
+    }
+
     [RequireSection("gifts")]
     [HttpPost]
     public async Task<IActionResult> Create(GiftCampaignDto dto)

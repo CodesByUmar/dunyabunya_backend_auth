@@ -46,6 +46,30 @@ public class PropertiesController : ControllerBase
         return Ok(properties);
     }
 
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetProperty(int id)
+    {
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+
+        var property = await _db.Properties
+            .Where(p => p.Id == id && p.UserId == userId)
+            .Select(p => new
+            {
+                p.Id,
+                p.Name,
+                p.Address,
+                p.Lat,
+                p.Lng,
+                p.MapLink,
+                p.CreatedAt
+            })
+            .FirstOrDefaultAsync();
+
+        if (property == null) return NotFound(new { message = "Obyekt topilmadi." });
+        return Ok(property);
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateProperty([FromBody] CreatePropertyDto dto)
     {

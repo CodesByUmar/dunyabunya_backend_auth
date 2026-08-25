@@ -19,6 +19,14 @@ public class GiftTiersController : ControllerBase
     public async Task<IActionResult> GetAll() =>
         Ok(await _db.GiftTiers.OrderBy(t => t.Points).ToListAsync());
 
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var entity = await _db.GiftTiers.FindAsync(id);
+        if (entity == null) return NotFound(new { message = "Sovg'a darajasi topilmadi." });
+        return Ok(entity);
+    }
+
     [RequireSection("gifts")]
     [HttpPost]
     public async Task<IActionResult> Create(GiftTierDto dto)
