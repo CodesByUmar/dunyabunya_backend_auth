@@ -65,6 +65,25 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Controllers va Swagger
 builder.Services.AddControllers();
+
+// So'rov tanasi (body) umuman yuborilmasa yoki noto'g'ri bo'lsa, ASP.NET Core
+// standart holatda {"dto": ["The dto field is required."]} kabi parametr
+// nomiga bog'liq, frontend uchun tushunarsiz xabar qaytaradi. Bu yerda barcha
+// controllerlardagi "{ message = ... }" formatiga moslashtiramiz.
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var message = context.ModelState.Values
+            .SelectMany(v => v.Errors)
+            .Select(e => e.ErrorMessage)
+            .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m))
+            ?? "So'rov ma'lumotlari noto'g'ri.";
+
+        return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(new { message });
+    };
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
