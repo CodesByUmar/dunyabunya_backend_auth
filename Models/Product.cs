@@ -20,6 +20,13 @@ public class Product
     public string? Brand { get; set; }
     public bool InStock { get; set; }
 
+    // Odoo'dan YANGI kelgan mahsulot avtomatik "pending" bilan saqlanadi va admin
+    // tasdiqlamaguncha ochiq katalogda (GET /api/Products) ko'rinmaydi. Sync xizmati
+    // faqat yangi qatorlar uchun "pending" qo'yadi — mavjud mahsulotni yangilashda bu
+    // maydonga tegilmaydi, shuning uchun admin qarori keyingi sinxronizatsiyalarda
+    // yo'qolmaydi. "approved" | "pending" | "rejected".
+    public string ApprovalStatus { get; set; } = "approved";
+
     // Sharxlardan avtomatik hisoblanadi (ReviewsController) — frontend to'g'ridan-to'g'ri
     // o'zgartira olmaydi, faqat sharh qo'shilganda/o'chirilganda server yangilaydi.
     public double Rating { get; set; }

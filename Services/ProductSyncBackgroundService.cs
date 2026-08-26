@@ -163,7 +163,8 @@ public class ProductSyncBackgroundService : BackgroundService
                     Cost = dto.Cost,
                     CategoryName = dto.CategoryName,
                     Brand = dto.Brand,
-                    InStock = dto.InStock
+                    InStock = dto.InStock,
+                    ApprovalStatus = "pending"
                 });
                 added++;
             }

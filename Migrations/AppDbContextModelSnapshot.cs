@@ -530,6 +530,10 @@ namespace AuthApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ApprovalStatus")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("Barcode")
                         .HasColumnType("text");
 
@@ -580,6 +584,8 @@ namespace AuthApi.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ApprovalStatus");
 
                     b.HasIndex("OdooProductId")
                         .IsUnique();

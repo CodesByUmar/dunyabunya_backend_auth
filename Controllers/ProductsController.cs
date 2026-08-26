@@ -35,7 +35,7 @@ public class ProductsController : ControllerBase
         page = Math.Max(page, 1);
         limit = Math.Clamp(limit, 1, 200);
 
-        var query = _db.Products.OrderBy(p => p.Id);
+        var query = _db.Products.Where(p => p.ApprovalStatus == "approved").OrderBy(p => p.Id);
         var total = await query.CountAsync();
         var items = await query
             .Skip((page - 1) * limit)
@@ -66,7 +66,7 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> GetProduct(int id)
     {
         var product = await _db.Products
-            .Where(p => p.Id == id)
+            .Where(p => p.Id == id && p.ApprovalStatus == "approved")
             .Select(p => new
             {
                 id = p.Id,
@@ -92,6 +92,53 @@ public class ProductsController : ControllerBase
         if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
         return Ok(product);
+    }
+
+    // Odoo'dan yangi kelgan, admin hali tasdiqlamagan mahsulotlar ro'yxati —
+    // ochiq katalogda (GET /api/Products) ko'rinmaydi, faqat shu yerda ko'rinadi.
+    [RequireSection("products")]
+    [HttpGet("pending")]
+    public async Task<IActionResult> GetPendingProducts()
+    {
+        var items = await _db.Products
+            .Where(p => p.ApprovalStatus == "pending")
+            .OrderByDescending(p => p.CreatedAt)
+            .Select(p => new
+            {
+                id = p.Id,
+                odooProductId = p.OdooProductId,
+                name = p.Name,
+                defaultCode = p.DefaultCode,
+                price = p.Price,
+                category = p.CategoryName,
+                brand = p.Brand,
+                inStock = p.InStock,
+                image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
+                createdAt = p.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(items);
+    }
+
+    // Admin yangi mahsulotni tasdiqlaydi (ochiq katalogda ko'rinadi) yoki rad etadi
+    // (yashirin qoladi). Keyinchalik istalgan vaqt qayta o'zgartirish mumkin.
+    [RequireSection("products")]
+    [HttpPatch("{id:int}/approval")]
+    public async Task<IActionResult> SetApprovalStatus(int id, ProductApprovalDto dto)
+    {
+        if (dto.Status != "approved" && dto.Status != "rejected")
+        {
+            return BadRequest(new { message = "Holat \"approved\" yoki \"rejected\" bo'lishi kerak." });
+        }
+
+        var product = await _db.Products.FindAsync(id);
+        if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
+
+        product.ApprovalStatus = dto.Status;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { product.Id, product.ApprovalStatus });
     }
 
     // Tavsif ("Qanday ishlatiladi") — Odoo'da bu ma'lumot yo'q, faqat admin

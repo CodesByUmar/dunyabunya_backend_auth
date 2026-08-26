@@ -55,6 +55,7 @@ public class AppDbContext : DbContext
         {
             entity.HasIndex(p => p.OdooProductId).IsUnique();
             entity.HasIndex(p => p.OdooTemplateId);
+            entity.HasIndex(p => p.ApprovalStatus);
             entity.Property(p => p.Price).HasColumnType("numeric(18,2)");
             entity.Property(p => p.Cost).HasColumnType("numeric(18,2)");
             entity.HasMany(p => p.Images)
