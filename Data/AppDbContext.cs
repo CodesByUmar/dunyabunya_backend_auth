@@ -35,6 +35,7 @@ public class AppDbContext : DbContext
     public DbSet<Property> Properties { get; set; }
     public DbSet<Coupon> Coupons { get; set; }
     public DbSet<CouponRedemption> CouponRedemptions { get; set; }
+    public DbSet<ChatMessage> ChatMessages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -150,6 +151,11 @@ public class AppDbContext : DbContext
         {
             entity.HasIndex(r => new { r.CouponId, r.UserId });
             entity.Property(r => r.DiscountAmount).HasColumnType("numeric(18,2)");
+        });
+
+        modelBuilder.Entity<ChatMessage>(entity =>
+        {
+            entity.HasIndex(m => m.ConversationId);
         });
     }
 }
