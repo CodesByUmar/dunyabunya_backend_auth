@@ -36,6 +36,7 @@ public class AppDbContext : DbContext
     public DbSet<Coupon> Coupons { get; set; }
     public DbSet<CouponRedemption> CouponRedemptions { get; set; }
     public DbSet<ChatMessage> ChatMessages { get; set; }
+    public DbSet<Translation> Translations { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -156,6 +157,11 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ChatMessage>(entity =>
         {
             entity.HasIndex(m => m.ConversationId);
+        });
+
+        modelBuilder.Entity<Translation>(entity =>
+        {
+            entity.HasIndex(t => new { t.App, t.Key }).IsUnique();
         });
     }
 }
