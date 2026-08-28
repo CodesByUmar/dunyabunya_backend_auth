@@ -405,6 +405,19 @@ public class AuthController : ControllerBase
     [HttpPost("refresh")]
     public async Task<ActionResult<AuthResponseDto>> Refresh(RefreshRequestDto dto)
     {
+        // XAVFSIZLIK: HashToken bo'sh/mavjud bo'lmagan qiymatni null'ga aylantiradi,
+        // va bazada ham RefreshToken null bo'lishi mumkin (masalan logout qilingandan
+        // keyin) — shu ikkisi solishtirilganda SecureEquals(null, null) => true
+        // qaytarardi, ya'ni bo'sh refreshToken "mos keldi" deb hisoblanardi. Bu orqali
+        // logout qilingan (yoki hech qachon login qilmagan) foydalanuvchining eski
+        // access tokeni + bo'sh refreshToken bilan yangi to'liq sessiya olish mumkin
+        // edi. Shuning uchun bo'sh refreshToken har doim, hech qanday solishtirishsiz,
+        // darhol rad etiladi.
+        if (string.IsNullOrEmpty(dto.RefreshToken))
+        {
+            return Unauthorized(new { message = "Refresh token noto'g'ri yoki muddati tugagan. Qayta login qiling." });
+        }
+
         var principal = GetPrincipalFromExpiredToken(dto.Token);
         if (principal == null)
         {
