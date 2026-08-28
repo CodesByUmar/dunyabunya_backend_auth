@@ -88,6 +88,14 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo { Title = "AuthApi", Version = "v1" });
+
+    // Production'da nginx "/auth-api" prefiksini qo'shib backendga yuboradi
+    // (masalan https://demo.dunyabunya.uz/auth-api/api/... -> backend /api/...).
+    // Swagger avtomatik bu prefiksni bilmaydi, shuning uchun "Try it out" tugmasi
+    // orqali production domendan sinab ko'rilganda so'rovlar 404 qaytarardi.
+    // Ikkita server qo'shib, Swagger UI'da tanlash mumkin qilamiz.
+    options.AddServer(new OpenApiServer { Url = "/", Description = "Joriy server (lokal/to'g'ridan-to'g'ri port)" });
+    options.AddServer(new OpenApiServer { Url = "https://demo.dunyabunya.uz/auth-api", Description = "Production (demo.dunyabunya.uz orqali)" });
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
