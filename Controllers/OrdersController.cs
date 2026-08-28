@@ -21,7 +21,12 @@ public class OrdersController : ControllerBase
         { "pending", "processing", "shipped", "delivered", "cancelled", "received" };
 
     private readonly AppDbContext _db;
-    public OrdersController(AppDbContext db) => _db = db;
+    private readonly IGeocodingService _geocoding;
+    public OrdersController(AppDbContext db, IGeocodingService geocoding)
+    {
+        _db = db;
+        _geocoding = geocoding;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetOrders()
@@ -132,6 +137,22 @@ public class OrdersController : ControllerBase
             total -= discountAmount;
         }
 
+        // Mijoz manzilni xaritadan tanlamasdan, faqat matn yozgan bo'lsa (Lat/Lng
+        // kelmagan bo'lsa) — avtomatik geokodlashga urinib ko'ramiz. Bu "best effort":
+        // xizmat ishlamasa yoki manzil topilmasa ham, buyurtma baribir yaratiladi,
+        // faqat Lat/Lng bo'sh qoladi (xuddi avvalgidek).
+        var resolvedLat = dto.Lat;
+        var resolvedLng = dto.Lng;
+        if (resolvedLat == null && resolvedLng == null && !string.IsNullOrWhiteSpace(dto.Address))
+        {
+            var geocoded = await _geocoding.GeocodeAsync(dto.Address);
+            if (geocoded != null)
+            {
+                resolvedLat = geocoded.Value.Lat;
+                resolvedLng = geocoded.Value.Lng;
+            }
+        }
+
         var order = new Order
         {
             UserId = userId.Value,
@@ -139,8 +160,8 @@ public class OrdersController : ControllerBase
             CustomerPhone = dto.Phone,
             CustomerAddress = dto.Address,
             CustomerEmail = dto.Email,
-            Lat = dto.Lat,
-            Lng = dto.Lng,
+            Lat = resolvedLat,
+            Lng = resolvedLng,
             Total = total,
             CouponCode = appliedCouponCode,
             DiscountAmount = discountAmount,

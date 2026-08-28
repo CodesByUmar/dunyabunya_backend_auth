@@ -51,6 +51,13 @@ builder.Services.AddHttpClient<IOdooProductService, OdooProductService>((sp, cli
 builder.Services.AddHttpClient();
 builder.Services.AddHostedService<HeartbeatBackgroundService>();
 
+// Mijoz manzilni qo'lda yozganda (xaritadan tanlamasdan) koordinatani avtomatik
+// topish uchun — OrdersController shu orqali "aniq bo'lmagan" manzilni geokodlaydi.
+builder.Services.AddHttpClient<IGeocodingService, YandexGeocodingService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
+
 // Product:SyncEnabled=false orqali vaqtincha o'chirish mumkin — masalan bazadan
 // takroriy noto'g'ri bo'sh natija qaytib, mahsulot ID'lari beqaror bo'lib qolsa,
 // sababi tekshirilayotgan vaqtda fon jarayonini to'xtatib turish uchun.
