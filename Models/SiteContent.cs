@@ -1,11 +1,15 @@
 namespace AuthApi.Models;
 
 // Katalog kategoriyasi (masalan "Qurilish materiallari"), ichida subkategoriyalar.
+// MUHIM: O'zbekcha nom bu yerda SAQLANMAYDI — u Translations jadvalidan
+// ("data.categories.{Slug}" kaliti) olinadi, chunki xuddi shu tarjima
+// frontendning boshqa joylarida (masalan bosh sahifa) ham ishlatiladi —
+// ikkita alohida (bir-biridan uzilib qolishi mumkin bo'lgan) manba
+// bo'lmasligi uchun (CategoriesController shu yerda birlashtiradi).
 public class Category
 {
     public int Id { get; set; }
     public string NameRu { get; set; } = string.Empty;
-    public string NameUz { get; set; } = string.Empty;
     // URL uchun — admin panelda qo'lda kiritilmaydi, nomdan avtomatik
     // yaratiladi (CategorySlugHelper) va keyingi tahrirlarda o'zgarmay qoladi
     // (mavjud havolalar/bannerlar buzilmasin).
@@ -21,7 +25,6 @@ public class Subcategory
     public int CategoryId { get; set; }
     public Category Category { get; set; } = null!;
     public string NameRu { get; set; } = string.Empty;
-    public string NameUz { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
     public string? Image { get; set; }
     public int Order { get; set; }

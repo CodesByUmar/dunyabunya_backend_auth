@@ -37,7 +37,6 @@ public class CategoriesController : ControllerBase
             {
                 c.Id,
                 c.NameRu,
-                c.NameUz,
                 c.Slug,
                 c.Image,
                 c.Order,
@@ -45,15 +44,39 @@ public class CategoriesController : ControllerBase
                 {
                     s.Id,
                     s.NameRu,
-                    s.NameUz,
                     s.Slug,
                     s.Image,
                     s.Order
-                })
+                }).ToList()
             })
             .ToListAsync();
 
-        return Ok(categories);
+        var keys = categories
+            .Select(c => $"data.categories.{c.Slug}")
+            .Concat(categories.SelectMany(c => c.Subcategories).Select(s => $"data.subcategories.{s.Slug}"))
+            .ToList();
+        var uzByKey = await GetUzTranslationsAsync(keys);
+
+        var result = categories.Select(c => new
+        {
+            c.Id,
+            c.NameRu,
+            NameUz = uzByKey.GetValueOrDefault($"data.categories.{c.Slug}", c.NameRu),
+            c.Slug,
+            c.Image,
+            c.Order,
+            Subcategories = c.Subcategories.Select(s => new
+            {
+                s.Id,
+                s.NameRu,
+                NameUz = uzByKey.GetValueOrDefault($"data.subcategories.{s.Slug}", s.NameRu),
+                s.Slug,
+                s.Image,
+                s.Order
+            })
+        });
+
+        return Ok(result);
     }
 
     [HttpGet("{id:int}")]
@@ -65,7 +88,6 @@ public class CategoriesController : ControllerBase
             {
                 c.Id,
                 c.NameRu,
-                c.NameUz,
                 c.Slug,
                 c.Image,
                 c.Order,
@@ -73,16 +95,38 @@ public class CategoriesController : ControllerBase
                 {
                     s.Id,
                     s.NameRu,
-                    s.NameUz,
                     s.Slug,
                     s.Image,
                     s.Order
-                })
+                }).ToList()
             })
             .FirstOrDefaultAsync();
 
         if (category == null) return NotFound(new { message = "Kategoriya topilmadi." });
-        return Ok(category);
+
+        var keys = new List<string> { $"data.categories.{category.Slug}" }
+            .Concat(category.Subcategories.Select(s => $"data.subcategories.{s.Slug}"))
+            .ToList();
+        var uzByKey = await GetUzTranslationsAsync(keys);
+
+        return Ok(new
+        {
+            category.Id,
+            category.NameRu,
+            NameUz = uzByKey.GetValueOrDefault($"data.categories.{category.Slug}", category.NameRu),
+            category.Slug,
+            category.Image,
+            category.Order,
+            Subcategories = category.Subcategories.Select(s => new
+            {
+                s.Id,
+                s.NameRu,
+                NameUz = uzByKey.GetValueOrDefault($"data.subcategories.{s.Slug}", s.NameRu),
+                s.Slug,
+                s.Image,
+                s.Order
+            })
+        });
     }
 
     [Authorize(Roles = "Admin")]
@@ -93,21 +137,22 @@ public class CategoriesController : ControllerBase
         var categorySlug = CategorySlugHelper.MakeUnique(CategorySlugHelper.Slugify(dto.NameRu), existingCategorySlugs);
 
         var subSlugsUsed = new HashSet<string>();
+        var subDtos = dto.Subcategories ?? new();
+        var subSlugs = new List<string>();
         var category = new Category
         {
             NameRu = dto.NameRu,
-            NameUz = dto.NameUz,
             Slug = categorySlug,
             Image = dto.Image,
             Order = dto.Order,
-            Subcategories = (dto.Subcategories ?? new()).Select(s =>
+            Subcategories = subDtos.Select(s =>
             {
                 var subSlug = CategorySlugHelper.MakeUnique(CategorySlugHelper.Slugify(s.NameRu), subSlugsUsed);
                 subSlugsUsed.Add(subSlug);
+                subSlugs.Add(subSlug);
                 return new Subcategory
                 {
                     NameRu = s.NameRu,
-                    NameUz = s.NameUz,
                     Slug = subSlug,
                     Image = s.Image,
                     Order = s.Order
@@ -116,6 +161,13 @@ public class CategoriesController : ControllerBase
         };
 
         _db.Categories.Add(category);
+
+        await UpsertNameTranslationAsync($"data.categories.{categorySlug}", dto.NameRu, dto.NameUz);
+        for (var i = 0; i < subDtos.Count; i++)
+        {
+            await UpsertNameTranslationAsync($"data.subcategories.{subSlugs[i]}", subDtos[i].NameRu, subDtos[i].NameUz);
+        }
+
         await _db.SaveChangesAsync();
 
         return Ok(new { category.Id });
@@ -133,9 +185,9 @@ public class CategoriesController : ControllerBase
         // Slug'ga TEGILMAYDI — mavjud havolalar (mahsulot/banner CategorySlug/
         // SubcategorySlug) buzilmasligi uchun, faqat yaratishda bir marta o'rnatiladi.
         category.NameRu = dto.NameRu;
-        category.NameUz = dto.NameUz;
         category.Image = dto.Image;
         category.Order = dto.Order;
+        await UpsertNameTranslationAsync($"data.categories.{category.Slug}", dto.NameRu, dto.NameUz);
 
         if (dto.Subcategories != null)
         {
@@ -151,20 +203,20 @@ public class CategoriesController : ControllerBase
                 if (s.Id.HasValue && existingById.TryGetValue(s.Id.Value, out var existing))
                 {
                     existing.NameRu = s.NameRu;
-                    existing.NameUz = s.NameUz;
                     existing.Image = s.Image;
                     existing.Order = s.Order;
                     // Slug'ga tegilmaydi — mavjud URL saqlanib qoladi.
                     keptIds.Add(existing.Id);
+                    await UpsertNameTranslationAsync($"data.subcategories.{existing.Slug}", s.NameRu, s.NameUz);
                 }
                 else
                 {
                     var subSlug = CategorySlugHelper.MakeUnique(CategorySlugHelper.Slugify(s.NameRu), subSlugsUsed);
                     subSlugsUsed.Add(subSlug);
+                    await UpsertNameTranslationAsync($"data.subcategories.{subSlug}", s.NameRu, s.NameUz);
                     category.Subcategories.Add(new Subcategory
                     {
                         NameRu = s.NameRu,
-                        NameUz = s.NameUz,
                         Slug = subSlug,
                         Image = s.Image,
                         Order = s.Order
@@ -280,6 +332,38 @@ public class CategoriesController : ControllerBase
         await _db.SaveChangesAsync();
 
         return Ok(new { message = "Rasm o'chirildi." });
+    }
+
+    // "data.categories.{slug}" / "data.subcategories.{slug}" kalitlari bo'yicha
+    // Translations jadvalidan o'zbekcha matnlarni bittada (N+1 emas) o'qiydi.
+    private async Task<Dictionary<string, string>> GetUzTranslationsAsync(List<string> keys)
+    {
+        if (keys.Count == 0) return new Dictionary<string, string>();
+
+        return await _db.Translations
+            .Where(t => t.App == "user" && keys.Contains(t.Key))
+            .ToDictionaryAsync(t => t.Key, t => t.Uz);
+    }
+
+    // Kategoriya/subkategoriya saqlanganda, uning tarjimasini ham (bor bo'lsa
+    // yangilaydi, yo'q bo'lsa yaratadi) Translations jadvaliga yozadi — shu orqali
+    // "Tarjimalar" sahifasi va kategoriya tahrirlash formasi BITTA manbadan
+    // ishlaydi (bir-biridan uzilib qolmaydi).
+    private async Task UpsertNameTranslationAsync(string key, string ru, string? uz)
+    {
+        if (string.IsNullOrWhiteSpace(uz)) return;
+
+        var existing = await _db.Translations.FirstOrDefaultAsync(t => t.App == "user" && t.Key == key);
+        if (existing != null)
+        {
+            existing.Ru = ru;
+            existing.Uz = uz;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            _db.Translations.Add(new Translation { App = "user", Key = key, Ru = ru, Uz = uz });
+        }
     }
 
     private static string CategoryImagePath(int id) => Path.Combine(UploadsRoot, $"category_{id}");

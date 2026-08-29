@@ -158,10 +158,6 @@ namespace AuthApi.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("NameUz")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<int>("Order")
                         .HasColumnType("integer");
 
@@ -929,10 +925,6 @@ namespace AuthApi.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("NameRu")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("NameUz")
                         .IsRequired()
                         .HasColumnType("text");
 
