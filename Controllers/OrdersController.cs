@@ -22,10 +22,12 @@ public class OrdersController : ControllerBase
 
     private readonly AppDbContext _db;
     private readonly IGeocodingService _geocoding;
-    public OrdersController(AppDbContext db, IGeocodingService geocoding)
+    private readonly IOdooOrderSyncQueue _odooOrderSyncQueue;
+    public OrdersController(AppDbContext db, IGeocodingService geocoding, IOdooOrderSyncQueue odooOrderSyncQueue)
     {
         _db = db;
         _geocoding = geocoding;
+        _odooOrderSyncQueue = odooOrderSyncQueue;
     }
 
     [HttpGet]
@@ -99,7 +101,8 @@ public class OrdersController : ControllerBase
                 ProductId = product.Id,
                 Name = product.Name,
                 Quantity = itemDto.Quantity,
-                Price = product.Price
+                Price = product.Price,
+                OdooProductId = product.OdooProductId
             });
             total += product.Price * itemDto.Quantity;
         }
@@ -177,6 +180,12 @@ public class OrdersController : ControllerBase
 
         _db.Orders.Add(order);
         await _db.SaveChangesAsync();
+
+        // Odoo'ga yuborishni kutmasdan javob qaytaramiz — fon jarayoni
+        // (OdooOrderRetryBackgroundService) buyurtmani deyarli darhol sale.order
+        // sifatida Odoo'da yaratadi (mijoz hali Odoo'ga sinxronlanmagan bo'lsa,
+        // keyinroq avtomatik qayta uriniladi).
+        _odooOrderSyncQueue.Enqueue(order.Id);
 
         if (coupon != null)
         {
@@ -324,6 +333,7 @@ public class OrdersController : ControllerBase
         pickupBranchId = o.PickupBranchId,
         pickupBranchName = o.PickupBranchName,
         pickupDate = o.PickupDate,
-        pickupTime = o.PickupTime
+        pickupTime = o.PickupTime,
+        odooSaleOrderId = o.OdooSaleOrderId
     };
 }

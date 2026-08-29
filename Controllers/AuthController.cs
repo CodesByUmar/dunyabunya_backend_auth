@@ -54,7 +54,14 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Bu email manzili mavjud emas yoki xat qabul qila olmaydi." });
         }
 
-        if (await _db.Users.AnyAsync(u => u.Email == normalizedEmail))
+        // Parolsiz (3-bosqichli) oqimda "Emailni o'zgartirish" tugmasi bilan orqaga
+        // qaytib, xuddi shu emailni qayta yuborish keng tarqalgan holat (typo,
+        // kodni yo'qotib qo'yish va h.k.). Agar shu email bilan avval boshlangan-u,
+        // HALI YAKUNLANMAGAN (PasswordHash hali yo'q) akkaunt bo'lsa — uni bloklab
+        // qo'yish o'rniga, xuddi shu qatorni qayta ishlatib, qaytadan boshlashga
+        // ruxsat beramiz. Faqat HAQIQATDA tugallangan (paroli bor) akkauntlar himoyalanadi.
+        var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
+        if (existingUser != null && existingUser.PasswordHash != null)
         {
             return BadRequest(new { message = "Bu email allaqachon ro'yxatdan o'tgan." });
         }
@@ -69,7 +76,7 @@ public class AuthController : ControllerBase
                 return BadRequest(new { message = "Telefon raqam formati noto'g'ri." });
             }
 
-            if (await _db.Users.AnyAsync(u => u.PhoneNumber == normalizedPhone))
+            if (await _db.Users.AnyAsync(u => u.PhoneNumber == normalizedPhone && u.Id != (existingUser != null ? existingUser.Id : 0)))
             {
                 return BadRequest(new { message = "Bu telefon raqam allaqachon ro'yxatdan o'tgan." });
             }
@@ -77,28 +84,30 @@ public class AuthController : ControllerBase
             phoneNumber = normalizedPhone;
         }
 
-        var user = new User
-        {
-            FirstName = dto.FirstName,
-            LastName = dto.LastName,
-            Email = normalizedEmail,
-            PhoneNumber = phoneNumber,
-            // Parol kiritilgan bo'lsa saqlaymiz (eski bitta-forma oqimida shu yerda
-            // o'rnatiladi); Google oqimida kelmaydi va keyin complete-registration
-            // yoki complete-profile orqali o'rnatiladi.
-            PasswordHash = dto.Password != null
-                ? BCrypt.Net.BCrypt.HashPassword(dto.Password)
-                : null,
-            Role = "Customer",
-            // Eski (lokal) oqim: parol register'da kiritilgan bo'lsa, akkaunt darhol
-            // tasdiqlangan hisoblanadi va TOKEN qaytariladi — eski frontend parol
-            // formasida darhol tizimga kiradi (tasdiqlash kodi talab qilinmaydi).
-            // Parolsiz (Google / yangi 3-bosqich) oqimda esa email tasdiqlash kodi
-            // yuboriladi va login tasdiqlanguncha bloklanadi.
-            EmailVerified = dto.Password != null
-        };
+        var isNewUser = existingUser == null;
+        var user = existingUser ?? new User();
+        user.FirstName = dto.FirstName;
+        user.LastName = dto.LastName;
+        user.Email = normalizedEmail;
+        user.PhoneNumber = phoneNumber;
+        // Parol kiritilgan bo'lsa saqlaymiz (eski bitta-forma oqimida shu yerda
+        // o'rnatiladi); Google oqimida kelmaydi va keyin complete-registration
+        // yoki complete-profile orqali o'rnatiladi.
+        user.PasswordHash = dto.Password != null
+            ? BCrypt.Net.BCrypt.HashPassword(dto.Password)
+            : null;
+        user.Role = "Customer";
+        // Eski (lokal) oqim: parol register'da kiritilgan bo'lsa, akkaunt darhol
+        // tasdiqlangan hisoblanadi va TOKEN qaytariladi — eski frontend parol
+        // formasida darhol tizimga kiradi (tasdiqlash kodi talab qilinmaydi).
+        // Parolsiz (Google / yangi 3-bosqich) oqimda esa email tasdiqlash kodi
+        // yuboriladi va login tasdiqlanguncha bloklanadi.
+        user.EmailVerified = dto.Password != null;
 
-        _db.Users.Add(user);
+        if (isNewUser)
+        {
+            _db.Users.Add(user);
+        }
 
         try
         {

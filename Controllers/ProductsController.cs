@@ -9,12 +9,12 @@ namespace AuthApi.Controllers;
 // Frontend uchun — Odoo'dan sinxronlangan (is_published=true) mahsulotlar.
 // Ochiq (public), autentifikatsiya talab qilinmaydi — katalog hammaga ko'rinadi.
 //
-// MUHIM: mahsulotning nom/narx/brend/ombor kabi barcha maydonlari Odoo'dan
-// har daqiqada avtomatik qayta yoziladi (ProductSyncBackgroundService) —
-// shuning uchun bu yerda ularni o'zgartiradigan endpoint YO'Q (qo'lda
-// o'zgartirilgan bo'lsa ham, bir daqiqada Odoo qiymati bilan almashtirilib
-// ketardi). Faqat RASM — sync bu maydonga tegmaydi, shuning uchun admin
-// panel orqali xavfsiz boshqarish mumkin.
+// MUHIM: Narx/Brend/Ombor holati (Price/Brand/InStock) har doim Odoo'dan
+// avtomatik qayta yoziladi (ProductSyncBackgroundService) — bularni
+// o'zgartiradigan endpoint YO'Q. Nomi va Kategoriya (Name/CategoryName) esa
+// admin panel orqali qo'lda tahrirlanishi mumkin (pastda, /details) — bir
+// marta tahrirlansa, keyingi sync bu ikkisiga endi tegmaydi. Rasm/Tavsif ham
+// sync bu maydonlarga tegmagani uchun admin panel orqali xavfsiz boshqariladi.
 [ApiController]
 [Route("api/[controller]")]
 public class ProductsController : ControllerBase
@@ -81,6 +81,8 @@ public class ProductsController : ControllerBase
                 inStock = p.InStock,
                 rating = p.Rating,
                 reviewCount = p.ReviewCount,
+                nameOverridden = p.NameOverridden,
+                categoryNameOverridden = p.CategoryNameOverridden,
                 image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
                 description = p.Description,
                 images = p.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + p.Id + "/images/" + i.Id }),
@@ -121,6 +123,46 @@ public class ProductsController : ControllerBase
         return Ok(items);
     }
 
+    // Admin panel uchun — GetProduct'ning aynan o'zi, faqat "approved" filtri yo'q.
+    // Shu orqali admin "pending" (hali tasdiqlanmagan) mahsulotni ham to'liq ko'rib,
+    // tahrirlash formasini to'ldirishi mumkin (ochiq GET /{id} bunday mahsulotlar
+    // uchun 404 qaytaradi — mijozlarga hali ko'rinmasligi kerak).
+    [RequireSection("products")]
+    [HttpGet("{id:int}/admin")]
+    public async Task<IActionResult> GetProductForAdmin(int id)
+    {
+        var product = await _db.Products
+            .Where(p => p.Id == id)
+            .Select(p => new
+            {
+                id = p.Id,
+                odooProductId = p.OdooProductId,
+                odooTemplateId = p.OdooTemplateId,
+                name = p.Name,
+                defaultCode = p.DefaultCode,
+                barcode = p.Barcode,
+                price = p.Price,
+                category = p.CategoryName,
+                brand = p.Brand,
+                inStock = p.InStock,
+                rating = p.Rating,
+                reviewCount = p.ReviewCount,
+                nameOverridden = p.NameOverridden,
+                categoryNameOverridden = p.CategoryNameOverridden,
+                approvalStatus = p.ApprovalStatus,
+                image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
+                description = p.Description,
+                images = p.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + p.Id + "/images/" + i.Id }),
+                specifications = p.Specifications.OrderBy(s => s.Order).Select(s => new { key = s.Key, value = s.Value }),
+                updatedAt = p.UpdatedAt
+            })
+            .FirstOrDefaultAsync();
+
+        if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
+
+        return Ok(product);
+    }
+
     // Admin yangi mahsulotni tasdiqlaydi (ochiq katalogda ko'rinadi) yoki rad etadi
     // (yashirin qoladi). Keyinchalik istalgan vaqt qayta o'zgartirish mumkin.
     [RequireSection("products")]
@@ -154,6 +196,40 @@ public class ProductsController : ControllerBase
         await _db.SaveChangesAsync();
 
         return Ok(new { description = product.Description });
+    }
+
+    // Nomi va kategoriyasi — Odoo'dan sinxronlanadi, lekin admin qo'lda to'g'irlashi
+    // mumkin (masalan Odoo'dagi nom noqulay/xato bo'lsa). Bir marta tahrirlansa,
+    // keyingi Odoo sinxronizatsiyalari bu maydonga endi tegmaydi (NameOverridden/
+    // CategoryNameOverridden — ProductSyncBackgroundService shunga qaraydi).
+    // Narx (Price) BU YERDA YO'Q — u har doim faqat Odoo'dan keladi, admin
+    // tomonidan tahrirlanishi mumkin emas.
+    [RequireSection("products")]
+    [HttpPatch("{id:int}/details")]
+    public async Task<IActionResult> UpdateProductDetails(int id, UpdateProductDetailsDto dto)
+    {
+        var product = await _db.Products.FindAsync(id);
+        if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
+
+        if (dto.Name != null)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Name))
+            {
+                return BadRequest(new { message = "Nomi bo'sh bo'lishi mumkin emas." });
+            }
+            product.Name = dto.Name;
+            product.NameOverridden = true;
+        }
+
+        if (dto.CategoryName != null)
+        {
+            product.CategoryName = dto.CategoryName;
+            product.CategoryNameOverridden = true;
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new { product.Id, product.Name, product.CategoryName });
     }
 
     // Xususiyatlar jadvali (masalan "Akkumulyator" -> "18 V Li-Ion") — butun

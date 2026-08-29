@@ -1,17 +1,21 @@
 namespace AuthApi.Models;
 
+// Id — mavjud subkategoriyani tahrirlashda beriladi (shunda uning eski Slug'i
+// saqlanib qoladi); yangi subkategoriya qo'shilganda bo'sh qoldiriladi (yangi
+// slug avtomatik yaratiladi). Slug bu yerda YO'Q — admin uni kiritmaydi.
 public class SubcategoryDto
 {
-    public string Name { get; set; } = string.Empty;
-    public string Slug { get; set; } = string.Empty;
+    public int? Id { get; set; }
+    public string NameRu { get; set; } = string.Empty;
+    public string NameUz { get; set; } = string.Empty;
     public string? Image { get; set; }
     public int Order { get; set; }
 }
 
 public class CategoryDto
 {
-    public string Name { get; set; } = string.Empty;
-    public string Slug { get; set; } = string.Empty;
+    public string NameRu { get; set; } = string.Empty;
+    public string NameUz { get; set; } = string.Empty;
     public string? Image { get; set; }
     public int Order { get; set; }
     public List<SubcategoryDto>? Subcategories { get; set; }

@@ -1,5 +1,6 @@
 using AuthApi.Data;
 using AuthApi.Models;
+using AuthApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -35,14 +36,16 @@ public class CategoriesController : ControllerBase
             .Select(c => new
             {
                 c.Id,
-                c.Name,
+                c.NameRu,
+                c.NameUz,
                 c.Slug,
                 c.Image,
                 c.Order,
                 Subcategories = c.Subcategories.OrderBy(s => s.Order).Select(s => new
                 {
                     s.Id,
-                    s.Name,
+                    s.NameRu,
+                    s.NameUz,
                     s.Slug,
                     s.Image,
                     s.Order
@@ -61,14 +64,16 @@ public class CategoriesController : ControllerBase
             .Select(c => new
             {
                 c.Id,
-                c.Name,
+                c.NameRu,
+                c.NameUz,
                 c.Slug,
                 c.Image,
                 c.Order,
                 Subcategories = c.Subcategories.OrderBy(s => s.Order).Select(s => new
                 {
                     s.Id,
-                    s.Name,
+                    s.NameRu,
+                    s.NameUz,
                     s.Slug,
                     s.Image,
                     s.Order
@@ -84,18 +89,29 @@ public class CategoriesController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateCategory(CategoryDto dto)
     {
+        var existingCategorySlugs = await _db.Categories.Select(c => c.Slug).ToHashSetAsync();
+        var categorySlug = CategorySlugHelper.MakeUnique(CategorySlugHelper.Slugify(dto.NameRu), existingCategorySlugs);
+
+        var subSlugsUsed = new HashSet<string>();
         var category = new Category
         {
-            Name = dto.Name,
-            Slug = dto.Slug,
+            NameRu = dto.NameRu,
+            NameUz = dto.NameUz,
+            Slug = categorySlug,
             Image = dto.Image,
             Order = dto.Order,
-            Subcategories = (dto.Subcategories ?? new()).Select(s => new Subcategory
+            Subcategories = (dto.Subcategories ?? new()).Select(s =>
             {
-                Name = s.Name,
-                Slug = s.Slug,
-                Image = s.Image,
-                Order = s.Order
+                var subSlug = CategorySlugHelper.MakeUnique(CategorySlugHelper.Slugify(s.NameRu), subSlugsUsed);
+                subSlugsUsed.Add(subSlug);
+                return new Subcategory
+                {
+                    NameRu = s.NameRu,
+                    NameUz = s.NameUz,
+                    Slug = subSlug,
+                    Image = s.Image,
+                    Order = s.Order
+                };
             }).ToList()
         };
 
@@ -114,21 +130,50 @@ public class CategoriesController : ControllerBase
             .FirstOrDefaultAsync(c => c.Id == id);
         if (category == null) return NotFound(new { message = "Kategoriya topilmadi." });
 
-        category.Name = dto.Name;
-        category.Slug = dto.Slug;
+        // Slug'ga TEGILMAYDI — mavjud havolalar (mahsulot/banner CategorySlug/
+        // SubcategorySlug) buzilmasligi uchun, faqat yaratishda bir marta o'rnatiladi.
+        category.NameRu = dto.NameRu;
+        category.NameUz = dto.NameUz;
         category.Image = dto.Image;
         category.Order = dto.Order;
 
         if (dto.Subcategories != null)
         {
-            _db.Subcategories.RemoveRange(category.Subcategories);
-            category.Subcategories = dto.Subcategories.Select(s => new Subcategory
+            // MUHIM: eski (Id) mos kelgan subkategoriyalar joyida YANGILANADI, o'chirib
+            // qayta yaratilmaydi — aks holda yuklangan rasm (diskda subId bo'yicha
+            // saqlanadi) va Slug (URL) har bir tahrirda buzilib ketardi.
+            var existingById = category.Subcategories.ToDictionary(s => s.Id);
+            var subSlugsUsed = category.Subcategories.Select(s => s.Slug).ToHashSet();
+            var keptIds = new HashSet<int>();
+
+            foreach (var s in dto.Subcategories)
             {
-                Name = s.Name,
-                Slug = s.Slug,
-                Image = s.Image,
-                Order = s.Order
-            }).ToList();
+                if (s.Id.HasValue && existingById.TryGetValue(s.Id.Value, out var existing))
+                {
+                    existing.NameRu = s.NameRu;
+                    existing.NameUz = s.NameUz;
+                    existing.Image = s.Image;
+                    existing.Order = s.Order;
+                    // Slug'ga tegilmaydi — mavjud URL saqlanib qoladi.
+                    keptIds.Add(existing.Id);
+                }
+                else
+                {
+                    var subSlug = CategorySlugHelper.MakeUnique(CategorySlugHelper.Slugify(s.NameRu), subSlugsUsed);
+                    subSlugsUsed.Add(subSlug);
+                    category.Subcategories.Add(new Subcategory
+                    {
+                        NameRu = s.NameRu,
+                        NameUz = s.NameUz,
+                        Slug = subSlug,
+                        Image = s.Image,
+                        Order = s.Order
+                    });
+                }
+            }
+
+            var removed = category.Subcategories.Where(s => s.Id != 0 && !keptIds.Contains(s.Id)).ToList();
+            if (removed.Count > 0) _db.Subcategories.RemoveRange(removed);
         }
 
         await _db.SaveChangesAsync();

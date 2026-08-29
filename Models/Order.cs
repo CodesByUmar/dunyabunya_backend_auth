@@ -27,6 +27,11 @@ public class Order
     public string? PickupDate { get; set; }
     public string? PickupTime { get; set; }
 
+    // Bu buyurtma Odoo'da sale.order sifatida yaratilgach shu yerga yoziladi
+    // (OdooOrderRetryBackgroundService orqali, fonda) — null bo'lsa hali
+    // Odoo'ga yuborilmagan yoki muvaffaqiyatsiz bo'lgan, keyingi davrda qayta uriniladi.
+    public int? OdooSaleOrderId { get; set; }
+
     public List<OrderItem> Items { get; set; } = new();
 }
 
@@ -40,4 +45,9 @@ public class OrderItem
     public string Name { get; set; } = string.Empty; // buyurtma paytidagi nom
     public int Quantity { get; set; }
     public decimal Price { get; set; } // buyurtma paytidagi narx (keyingi narx o'zgarishiga ta'sirlanmaydi)
+
+    // Buyurtma paytidagi Odoo mahsulot (product.product) ID'si — Odoo'ga sale.order
+    // qatori sifatida yuborish uchun. Mahsulotning o'zi keyinroq o'chirilsa ham
+    // (Products jadvalidan) shu yerda saqlanib qoladi.
+    public int? OdooProductId { get; set; }
 }

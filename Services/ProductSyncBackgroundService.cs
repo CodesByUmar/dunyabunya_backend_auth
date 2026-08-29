@@ -136,12 +136,15 @@ public class ProductSyncBackgroundService : BackgroundService
             if (existingByOdooId.TryGetValue(dto.OdooProductId, out var product))
             {
                 product.OdooTemplateId = dto.OdooTemplateId;
-                product.Name = dto.Name;
+                // Admin panel orqali qo'lda tahrirlangan bo'lsa (NameOverridden/
+                // CategoryNameOverridden), Odoo'dan kelgan qiymat bu maydonlarga
+                // endi tegmaydi — admin tahriri doim ustun.
+                if (!product.NameOverridden) product.Name = dto.Name;
                 product.DefaultCode = dto.DefaultCode;
                 product.Barcode = dto.Barcode;
                 product.Price = dto.Price;
                 product.Cost = dto.Cost;
-                product.CategoryName = dto.CategoryName;
+                if (!product.CategoryNameOverridden) product.CategoryName = dto.CategoryName;
                 product.Brand = dto.Brand;
                 product.InStock = dto.InStock;
                 // ImageBase64'ga TEGILMAYDI — rasmni Odoo emas, admin panel (Superuser)
@@ -170,14 +173,20 @@ public class ProductSyncBackgroundService : BackgroundService
             }
         }
 
-        var toRemove = existing.Where(p => !freshIds.Contains(p.OdooProductId)).ToList();
-        if (toRemove.Count > 0) db.Products.RemoveRange(toRemove);
+        // Odoo'da is_published=false qilinsa (masalan omborda vaqtincha tugab, admin
+        // vaqtincha o'chirib qo'ysa) — MAHSULOT O'CHIRILMAYDI, faqat qayta "pending"ga
+        // o'tkaziladi (sayt katalogidan yashiriladi). Aks holda tavsif/rasm-galereya/
+        // xususiyatlar/sharhlar har safar yo'qolib, qaytadan yoqilganda hammasi
+        // yo'qotilgan bo'lardi. Admin qaytadan is_published qilsa, mahsulot "existing"
+        // sifatida topilib, o'z holicha (pending) qoladi — qayta tasdiqlash kifoya.
+        var toHide = existing.Where(p => !freshIds.Contains(p.OdooProductId) && p.ApprovalStatus != "pending").ToList();
+        foreach (var p in toHide) p.ApprovalStatus = "pending";
 
         await db.SaveChangesAsync(ct);
         _lastKnownGoodCount = fresh.Count;
 
         _logger.LogInformation(
-            "Product sync: {Fresh} ta Odoo'dan olindi ({Added} yangi, {Updated} yangilandi, {Removed} o'chirildi).",
-            fresh.Count, added, updated, toRemove.Count);
+            "Product sync: {Fresh} ta Odoo'dan olindi ({Added} yangi, {Updated} yangilandi, {Hidden} qayta pending qilindi).",
+            fresh.Count, added, updated, toHide.Count);
     }
 }

@@ -49,6 +49,45 @@ public class OdooService : IOdooService
         return partnerId;
     }
 
+    public async Task<int> CreateSaleOrderAsync(int partnerId, string clientOrderRef, IReadOnlyList<(int OdooProductId, int Quantity, decimal PriceUnit)> lines)
+    {
+        var db = _config["Odoo:Database"];
+        var username = _config["Odoo:Username"];
+        var apiKey = _config["Odoo:ApiKeyOutbound"];
+
+        if (string.IsNullOrEmpty(db) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(apiKey))
+        {
+            throw new InvalidOperationException("Odoo sozlamalari to'liq emas (Database/Username/ApiKeyOutbound).");
+        }
+
+        var uid = await AuthenticateAsync(db, username, apiKey);
+
+        // Odoo'ning "one2many command" formati: (0, 0, values) — yangi qator qo'shish.
+        // price_unit aniq berilgani uchun Odoo'ning o'z pricelist hisob-kitobi
+        // qo'llanmaydi — mijoz saytimizda haqiqatda to'lagan narx saqlanadi.
+        var orderLines = lines.Select(l => (object)new object[]
+        {
+            0, 0, new Dictionary<string, object>
+            {
+                ["product_id"] = l.OdooProductId,
+                ["product_uom_qty"] = l.Quantity,
+                ["price_unit"] = (double)l.PriceUnit
+            }
+        }).ToArray();
+
+        var values = new Dictionary<string, object?>
+        {
+            ["partner_id"] = partnerId,
+            ["client_order_ref"] = clientOrderRef,
+            ["order_line"] = orderLines
+        };
+
+        var result = await CallAsync("object", "execute_kw",
+            new object[] { db, uid, apiKey, "sale.order", "create", new object[] { values } });
+
+        return result.GetInt32();
+    }
+
     private async Task<int> AuthenticateAsync(string db, string username, string apiKey)
     {
         var result = await CallAsync("common", "authenticate",

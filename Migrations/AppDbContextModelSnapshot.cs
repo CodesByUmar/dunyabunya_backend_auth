@@ -154,7 +154,11 @@ namespace AuthApi.Migrations
                     b.Property<string>("Image")
                         .HasColumnType("text");
 
-                    b.Property<string>("Name")
+                    b.Property<string>("NameRu")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("NameUz")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -471,6 +475,9 @@ namespace AuthApi.Migrations
                     b.Property<double?>("Lng")
                         .HasColumnType("double precision");
 
+                    b.Property<int?>("OdooSaleOrderId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("PaymentMethod")
                         .IsRequired()
                         .HasColumnType("text");
@@ -515,6 +522,9 @@ namespace AuthApi.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int?>("OdooProductId")
+                        .HasColumnType("integer");
 
                     b.Property<int>("OrderId")
                         .HasColumnType("integer");
@@ -576,6 +586,9 @@ namespace AuthApi.Migrations
                     b.Property<string>("CategoryName")
                         .HasColumnType("text");
 
+                    b.Property<bool>("CategoryNameOverridden")
+                        .HasColumnType("boolean");
+
                     b.Property<decimal>("Cost")
                         .HasColumnType("numeric(18,2)");
 
@@ -597,6 +610,9 @@ namespace AuthApi.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<bool>("NameOverridden")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("OdooProductId")
                         .HasColumnType("integer");
@@ -912,7 +928,11 @@ namespace AuthApi.Migrations
                     b.Property<string>("Image")
                         .HasColumnType("text");
 
-                    b.Property<string>("Name")
+                    b.Property<string>("NameRu")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("NameUz")
                         .IsRequired()
                         .HasColumnType("text");
 

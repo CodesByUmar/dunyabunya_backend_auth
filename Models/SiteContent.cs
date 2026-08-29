@@ -4,7 +4,11 @@ namespace AuthApi.Models;
 public class Category
 {
     public int Id { get; set; }
-    public string Name { get; set; } = string.Empty;
+    public string NameRu { get; set; } = string.Empty;
+    public string NameUz { get; set; } = string.Empty;
+    // URL uchun — admin panelda qo'lda kiritilmaydi, nomdan avtomatik
+    // yaratiladi (CategorySlugHelper) va keyingi tahrirlarda o'zgarmay qoladi
+    // (mavjud havolalar/bannerlar buzilmasin).
     public string Slug { get; set; } = string.Empty;
     public string? Image { get; set; }
     public int Order { get; set; }
@@ -16,7 +20,8 @@ public class Subcategory
     public int Id { get; set; }
     public int CategoryId { get; set; }
     public Category Category { get; set; } = null!;
-    public string Name { get; set; } = string.Empty;
+    public string NameRu { get; set; } = string.Empty;
+    public string NameUz { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
     public string? Image { get; set; }
     public int Order { get; set; }

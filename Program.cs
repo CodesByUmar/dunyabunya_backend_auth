@@ -34,6 +34,11 @@ builder.Services.AddHttpClient<IOdooService, OdooService>((sp, client) =>
 builder.Services.AddSingleton<IOdooSyncQueue, OdooSyncQueue>();
 builder.Services.AddHostedService<OdooRetryBackgroundService>();
 
+// Buyurtmalarni Odoo'da sale.order sifatida yaratib qo'yish uchun (fon jarayoni,
+// yuqoridagi mijoz-sinxronizatsiyasi bilan bir xil naqsh).
+builder.Services.AddSingleton<IOdooOrderSyncQueue, OdooOrderSyncQueue>();
+builder.Services.AddHostedService<OdooOrderRetryBackgroundService>();
+
 // Mahsulotlarni tortish uchun — xuddi shu Odoo bazasi, alohida HttpClient (timeout
 // kattaroq, chunki bir nechta bosqichli so'rov ketadi: template -> attribute -> value).
 builder.Services.AddHttpClient<IOdooProductService, OdooProductService>((sp, client) =>
@@ -50,6 +55,10 @@ builder.Services.AddHttpClient<IOdooProductService, OdooProductService>((sp, cli
 });
 builder.Services.AddHttpClient();
 builder.Services.AddHostedService<HeartbeatBackgroundService>();
+
+// Email tasdiqlangan-u, telefon/parol bosqichini tashlab ketgan ("chala")
+// ro'yxatdan o'tishlarni 1 kundan keyin avtomatik o'chiradi.
+builder.Services.AddHostedService<StaleUserCleanupBackgroundService>();
 
 // Mijoz manzilni qo'lda yozganda (xaritadan tanlamasdan) koordinatani avtomatik
 // topish uchun — OrdersController shu orqali "aniq bo'lmagan" manzilni geokodlaydi.
