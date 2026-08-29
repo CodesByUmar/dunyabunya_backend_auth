@@ -24,14 +24,20 @@ public class ProductsController : ControllerBase
     private const long MaxImageBytes = 5 * 1024 * 1024; // 5 MB
     private const int MaxGalleryImages = 8;
 
-    // Frontenddagi CATEGORY_SLUG_MAP (src/lib/api.ts) bilan AYNAN mos —
-    // faqat shu nomlardan biri bo'lsa, mahsulot katalog filtrida to'g'ri
-    // kategoriyaga tushadi. Bu yerda o'zgartirilsa, frontenddagi map bilan
-    // ham albatta sinxronlab turilishi kerak.
-    private static readonly string[] CategoryOptions =
+    // Kalit — admin ko'radigan va tanlaydigan nom (Categories jadvalidagi NameUz
+    // bilan BIR XIL, mijoz saytda ko'radigan nom). Qiymat — Odoo'ning o'zidagi
+    // (ichki) original nom, faqat CategoryName yo'lini qayta tuzishda ishlatiladi
+    // va frontenddagi CATEGORY_SLUG_MAP (src/lib/api.ts) kalitlariga mos kelishi
+    // SHART — aks holda mahsulot katalog filtrida "kategoriyasiz" bo'lib qoladi.
+    // Bu yerda o'zgartirilsa, frontenddagi map bilan albatta sinxronlab turilishi kerak.
+    private static readonly Dictionary<string, string> CategoryDisplayToOdoo = new()
     {
-        "Elektrika", "Muhandislik tizimlari", "Qurilish mahsulotlari",
-        "Yakuniy qoplamalar", "Mahkamlagichlar", "Instrumentlar"
+        ["Elektr"] = "Elektrika",
+        ["Santexnika"] = "Muhandislik tizimlari",
+        ["Qurilish materiallari"] = "Qurilish mahsulotlari",
+        ["Bezak materiallari"] = "Yakuniy qoplamalar",
+        ["Mahkamlash"] = "Mahkamlagichlar",
+        ["Asboblar"] = "Instrumentlar"
     };
 
     private readonly AppDbContext _db;
@@ -109,10 +115,13 @@ public class ProductsController : ControllerBase
     }
 
     // Admin panelda "Kategoriya" va "Subkategoriya"ni SELECT orqali tanlash uchun —
-    // ikkalasi ham erkin matn EMAS. Kategoriya — frontenddagi CATEGORY_SLUG_MAP bilan
-    // aynan mos qattiq ro'yxat (yuqorida). Subkategoriya — har bir kategoriya ostida
-    // Odoo'dan haqiqatda kelgan (Products jadvalida mavjud) qiymatlar — shunda admin
-    // hech qachon "hech qanday mahsulotda yo'q" subkategoriya kiritolmaydi.
+    // ikkalasi ham erkin matn EMAS. Kategoriya sifatida MIJOZ ko'radigan nom
+    // qaytariladi (masalan "Santexnika"), Odoo'ning ichki nomi ("Muhandislik
+    // tizimlari") admin'ga umuman ko'rsatilmaydi — shunday bo'lmasa admin
+    // saytdagi qaysi bo'limga tegishli ekanini bilolmay chalkashadi. Subkategoriya —
+    // har bir kategoriya ostida Odoo'dan haqiqatda kelgan (Products jadvalida
+    // mavjud) qiymatlar — shunda admin hech qachon "hech qanday mahsulotda yo'q"
+    // subkategoriya kiritolmaydi.
     [HttpGet("category-options")]
     public async Task<IActionResult> GetCategoryOptions()
     {
@@ -122,22 +131,22 @@ public class ProductsController : ControllerBase
             .Distinct()
             .ToListAsync();
 
-        var subcategoriesByTop = new Dictionary<string, SortedSet<string>>();
-        foreach (var top in CategoryOptions) subcategoriesByTop[top] = new SortedSet<string>();
+        var subcategoriesByOdooTop = new Dictionary<string, SortedSet<string>>();
+        foreach (var odooTop in CategoryDisplayToOdoo.Values) subcategoriesByOdooTop[odooTop] = new SortedSet<string>();
 
         foreach (var raw in allCategoryNames)
         {
             var (top, leaf) = ParseCategoryPath(raw);
-            if (top != null && leaf != null && subcategoriesByTop.ContainsKey(top))
+            if (top != null && leaf != null && subcategoriesByOdooTop.ContainsKey(top))
             {
-                subcategoriesByTop[top].Add(leaf);
+                subcategoriesByOdooTop[top].Add(leaf);
             }
         }
 
-        var result = CategoryOptions.Select(top => new
+        var result = CategoryDisplayToOdoo.Select(kv => new
         {
-            category = top,
-            subcategories = subcategoriesByTop[top].ToList()
+            category = kv.Key,
+            subcategories = subcategoriesByOdooTop[kv.Value].ToList()
         });
 
         return Ok(result);
@@ -185,7 +194,12 @@ public class ProductsController : ControllerBase
 
         if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
-        var (categoryTop, categoryLeaf) = ParseCategoryPath(product.CategoryName);
+        var (odooCategoryTop, categoryLeaf) = ParseCategoryPath(product.CategoryName);
+        // Odoo'ning ichki nomini ("Muhandislik tizimlari") mijoz ko'radigan nomga
+        // ("Santexnika") o'giramiz — admin category-options'dagi bilan bir xilini ko'radi.
+        var categoryTop = odooCategoryTop != null
+            ? CategoryDisplayToOdoo.FirstOrDefault(kv => kv.Value == odooCategoryTop).Key
+            : null;
 
         return Ok(new
         {
@@ -293,9 +307,11 @@ public class ProductsController : ControllerBase
 
         if (dto.Category != null)
         {
-            if (!CategoryOptions.Contains(dto.Category))
+            // dto.Category — mijoz ko'radigan nom (masalan "Santexnika"). Odoo'ning
+            // ichki nomiga ("Muhandislik tizimlari") shu orqali o'giriladi.
+            if (!CategoryDisplayToOdoo.TryGetValue(dto.Category, out var odooCategory))
             {
-                return BadRequest(new { message = $"Kategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", CategoryOptions)}" });
+                return BadRequest(new { message = $"Kategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", CategoryDisplayToOdoo.Keys)}" });
             }
 
             if (string.IsNullOrWhiteSpace(dto.Subcategory))
@@ -313,7 +329,7 @@ public class ProductsController : ControllerBase
                 .ToListAsync();
             var knownForCategory = validSubcategories
                 .Select(ParseCategoryPath)
-                .Where(t => t.Top == dto.Category && t.Leaf != null)
+                .Where(t => t.Top == odooCategory && t.Leaf != null)
                 .Select(t => t.Leaf!)
                 .ToHashSet();
 
@@ -327,9 +343,9 @@ public class ProductsController : ControllerBase
                 });
             }
 
-            // "Hammasi / {Category} / {Subcategory}" — frontend faqat birinchi va
+            // "Hammasi / {OdooCategory} / {Subcategory}" — frontend faqat birinchi va
             // oxirgi bo'lakni o'qiydi, o'rtadagi bo'lak muhim emas (q. ParseCategoryPath).
-            product.CategoryName = $"Hammasi / {dto.Category} / {dto.Subcategory}";
+            product.CategoryName = $"Hammasi / {odooCategory} / {dto.Subcategory}";
             product.CategoryNameOverridden = true;
         }
 
