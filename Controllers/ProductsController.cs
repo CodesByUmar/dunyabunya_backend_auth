@@ -9,12 +9,15 @@ namespace AuthApi.Controllers;
 // Frontend uchun — Odoo'dan sinxronlangan (is_published=true) mahsulotlar.
 // Ochiq (public), autentifikatsiya talab qilinmaydi — katalog hammaga ko'rinadi.
 //
-// MUHIM: Narx/Brend/Ombor holati (Price/Brand/InStock) har doim Odoo'dan
-// avtomatik qayta yoziladi (ProductSyncBackgroundService) — bularni
-// o'zgartiradigan endpoint YO'Q. Nomi va Kategoriya (Name/CategoryName) esa
-// admin panel orqali qo'lda tahrirlanishi mumkin (pastda, /details) — bir
-// marta tahrirlansa, keyingi sync bu ikkisiga endi tegmaydi. Rasm/Tavsif ham
-// sync bu maydonlarga tegmagani uchun admin panel orqali xavfsiz boshqariladi.
+// MUHIM: Narx/Kategoriya/Brend/Ombor holati (Price/CategoryName/Brand/InStock)
+// har doim Odoo'dan avtomatik qayta yoziladi (ProductSyncBackgroundService) —
+// bularni o'zgartiradigan endpoint YO'Q. (CategoryName'ni admin panel orqali
+// tahrirlash imkoni bir muddat bor edi, lekin frontendning kategoriya-filtrlash
+// mantig'i original Odoo yo'liga qattiq bog'langani sabab "kategoriyasiz" bo'lib
+// qolish xatosiga olib keldi — frontend to'g'ri tuzatilmaguncha o'chirilgan.)
+// Faqat Nomi (Name) admin panel orqali qo'lda tahrirlanishi mumkin (pastda,
+// /details) — bir marta tahrirlansa, keyingi sync bu maydonga endi tegmaydi.
+// Rasm/Tavsif ham sync tegmagani uchun admin panel orqali xavfsiz boshqariladi.
 [ApiController]
 [Route("api/[controller]")]
 public class ProductsController : ControllerBase
@@ -82,7 +85,6 @@ public class ProductsController : ControllerBase
                 rating = p.Rating,
                 reviewCount = p.ReviewCount,
                 nameOverridden = p.NameOverridden,
-                categoryNameOverridden = p.CategoryNameOverridden,
                 image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
                 description = p.Description,
                 images = p.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + p.Id + "/images/" + i.Id }),
@@ -148,7 +150,6 @@ public class ProductsController : ControllerBase
                 rating = p.Rating,
                 reviewCount = p.ReviewCount,
                 nameOverridden = p.NameOverridden,
-                categoryNameOverridden = p.CategoryNameOverridden,
                 approvalStatus = p.ApprovalStatus,
                 image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
                 description = p.Description,
@@ -198,12 +199,13 @@ public class ProductsController : ControllerBase
         return Ok(new { description = product.Description });
     }
 
-    // Nomi va kategoriyasi — Odoo'dan sinxronlanadi, lekin admin qo'lda to'g'irlashi
-    // mumkin (masalan Odoo'dagi nom noqulay/xato bo'lsa). Bir marta tahrirlansa,
-    // keyingi Odoo sinxronizatsiyalari bu maydonga endi tegmaydi (NameOverridden/
-    // CategoryNameOverridden — ProductSyncBackgroundService shunga qaraydi).
-    // Narx (Price) BU YERDA YO'Q — u har doim faqat Odoo'dan keladi, admin
-    // tomonidan tahrirlanishi mumkin emas.
+    // Nomi — Odoo'dan sinxronlanadi, lekin admin qo'lda to'g'irlashi mumkin
+    // (masalan Odoo'dagi nom noqulay/xato bo'lsa). Bir marta tahrirlansa,
+    // keyingi Odoo sinxronizatsiyalari bu maydonga endi tegmaydi (NameOverridden —
+    // ProductSyncBackgroundService shunga qaraydi). Narx va Kategoriya BU YERDA
+    // YO'Q — ikkalasi ham har doim faqat Odoo'dan keladi, admin tomonidan
+    // tahrirlanishi mumkin emas (Kategoriya — frontendning kategoriya-filtrlash
+    // mantig'i original Odoo yo'liga qattiq bog'langani sabab, vaqtincha o'chirilgan).
     [RequireSection("products")]
     [HttpPatch("{id:int}/details")]
     public async Task<IActionResult> UpdateProductDetails(int id, UpdateProductDetailsDto dto)
@@ -221,15 +223,9 @@ public class ProductsController : ControllerBase
             product.NameOverridden = true;
         }
 
-        if (dto.CategoryName != null)
-        {
-            product.CategoryName = dto.CategoryName;
-            product.CategoryNameOverridden = true;
-        }
-
         await _db.SaveChangesAsync();
 
-        return Ok(new { product.Id, product.Name, product.CategoryName });
+        return Ok(new { product.Id, product.Name });
     }
 
     // Xususiyatlar jadvali (masalan "Akkumulyator" -> "18 V Li-Ion") — butun

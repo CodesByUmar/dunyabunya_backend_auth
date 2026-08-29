@@ -5,13 +5,12 @@ public class UpdateProductDescriptionDto
     public string? Description { get; set; }
 }
 
-// Faqat Name/CategoryName — Narx (Price) admin panelda umuman tahrirlanmaydi,
-// doim Odoo'dan sinxronlanadi. Ikkalasi ham ixtiyoriy: faqat kiritilgani
-// yangilanadi (masalan faqat nomini o'zgartirmoqchi bo'lsa, kategoriyaga tegilmaydi).
+// Faqat Name — Narx (Price) va Kategoriya (CategoryName) admin panelda
+// tahrirlanmaydi (Kategoriya frontendning original Odoo yo'liga qattiq
+// bog'langan mantig'i tuzatilmaguncha xavfli — "Kategoriya tahriri" ADR'ga q.).
 public class UpdateProductDetailsDto
 {
     public string? Name { get; set; }
-    public string? CategoryName { get; set; }
 }
 
 public class ProductSpecificationDto

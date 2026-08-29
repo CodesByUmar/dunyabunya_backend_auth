@@ -136,15 +136,16 @@ public class ProductSyncBackgroundService : BackgroundService
             if (existingByOdooId.TryGetValue(dto.OdooProductId, out var product))
             {
                 product.OdooTemplateId = dto.OdooTemplateId;
-                // Admin panel orqali qo'lda tahrirlangan bo'lsa (NameOverridden/
-                // CategoryNameOverridden), Odoo'dan kelgan qiymat bu maydonlarga
-                // endi tegmaydi — admin tahriri doim ustun.
+                // Admin panel orqali qo'lda tahrirlangan bo'lsa (NameOverridden),
+                // Odoo'dan kelgan qiymat bu maydonga endi tegmaydi — admin tahriri
+                // doim ustun. Kategoriya har doim Odoo'dan sinxronlanadi (tahrirlash
+                // imkoni yo'q — frontendning kategoriya-filtrlash mantig'i shunga bog'liq).
                 if (!product.NameOverridden) product.Name = dto.Name;
                 product.DefaultCode = dto.DefaultCode;
                 product.Barcode = dto.Barcode;
                 product.Price = dto.Price;
                 product.Cost = dto.Cost;
-                if (!product.CategoryNameOverridden) product.CategoryName = dto.CategoryName;
+                product.CategoryName = dto.CategoryName;
                 product.Brand = dto.Brand;
                 product.InStock = dto.InStock;
                 // ImageBase64'ga TEGILMAYDI — rasmni Odoo emas, admin panel (Superuser)

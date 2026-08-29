@@ -582,9 +582,6 @@ namespace AuthApi.Migrations
                     b.Property<string>("CategoryName")
                         .HasColumnType("text");
 
-                    b.Property<bool>("CategoryNameOverridden")
-                        .HasColumnType("boolean");
-
                     b.Property<decimal>("Cost")
                         .HasColumnType("numeric(18,2)");
 
