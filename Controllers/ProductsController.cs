@@ -40,6 +40,30 @@ public class ProductsController : ControllerBase
         ["Asboblar"] = "Instrumentlar"
     };
 
+    // Odoo'ning ichki nomidan (CategoryName yo'lining birinchi bo'lagi) to'g'ridan-to'g'ri
+    // /api/categories jadvalidagi Slug'ga o'tadigan xarita — frontend BUNI ishlatishi kerak,
+    // matn/nom moslashtirish (fragile) o'rniga. Har bir mahsulot javobida tayyor
+    // "categorySlug" maydoni sifatida beriladi (pastda, GetCategorySlug orqali).
+    private static readonly Dictionary<string, string> OdooToCategorySlug = new()
+    {
+        ["Elektrika"] = "elektrika",
+        ["Muhandislik tizimlari"] = "santekhnika",
+        ["Qurilish mahsulotlari"] = "stroitelnye-materialy",
+        ["Yakuniy qoplamalar"] = "otdelochnye-materialy",
+        ["Mahkamlagichlar"] = "krypyozh",
+        ["Instrumentlar"] = "instrumenty"
+    };
+
+    // Mahsulotning CategoryName'idan ("Hammasi / Muhandislik tizimlari / Adapter")
+    // to'g'ridan-to'g'ri, ISHONCHLI slug ("santekhnika") ni hisoblaydi — bu slug
+    // GET /api/categories'dagi Slug bilan AYNAN bir xil, frontend hech qanday nom
+    // moslashtirish/taxmin qilmasdan to'g'ridan-to'g'ri solishtira oladi.
+    private static string? GetCategorySlug(string? categoryName)
+    {
+        var (top, _) = ParseCategoryPath(categoryName);
+        return top != null && OdooToCategorySlug.TryGetValue(top, out var slug) ? slug : null;
+    }
+
     private readonly AppDbContext _db;
 
     public ProductsController(AppDbContext db)
@@ -55,27 +79,49 @@ public class ProductsController : ControllerBase
 
         var query = _db.Products.Where(p => p.ApprovalStatus == "approved").OrderBy(p => p.Id);
         var total = await query.CountAsync();
-        var items = await query
+        var raw = await query
             .Skip((page - 1) * limit)
             .Take(limit)
             .Select(p => new
             {
-                id = p.Id,
-                odooProductId = p.OdooProductId,
-                odooTemplateId = p.OdooTemplateId,
-                name = p.Name,
-                defaultCode = p.DefaultCode,
-                barcode = p.Barcode,
-                price = p.Price,
-                category = p.CategoryName,
-                brand = p.Brand,
-                inStock = p.InStock,
-                rating = p.Rating,
-                reviewCount = p.ReviewCount,
-                image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
-                updatedAt = p.UpdatedAt
+                p.Id,
+                p.OdooProductId,
+                p.OdooTemplateId,
+                p.Name,
+                p.DefaultCode,
+                p.Barcode,
+                p.Price,
+                p.CategoryName,
+                p.Brand,
+                p.InStock,
+                p.Rating,
+                p.ReviewCount,
+                HasImage = p.ImageBase64 != null,
+                p.UpdatedAt
             })
             .ToListAsync();
+
+        // categorySlug — GetCategorySlug'ni SQL'ga tarjima qilib bo'lmaydi (EF Core
+        // buni qo'llab-quvvatlamaydi), shuning uchun bazadan olingan CategoryName'dan
+        // xotirada hisoblanadi.
+        var items = raw.Select(p => new
+        {
+            id = p.Id,
+            odooProductId = p.OdooProductId,
+            odooTemplateId = p.OdooTemplateId,
+            name = p.Name,
+            defaultCode = p.DefaultCode,
+            barcode = p.Barcode,
+            price = p.Price,
+            category = p.CategoryName,
+            categorySlug = GetCategorySlug(p.CategoryName),
+            brand = p.Brand,
+            inStock = p.InStock,
+            rating = p.Rating,
+            reviewCount = p.ReviewCount,
+            image = p.HasImage ? "/api/products/" + p.Id + "/image" : null,
+            updatedAt = p.UpdatedAt
+        });
 
         return Ok(new { items, page, total });
     }
@@ -83,35 +129,36 @@ public class ProductsController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetProduct(int id)
     {
-        var product = await _db.Products
-            .Where(p => p.Id == id && p.ApprovalStatus == "approved")
-            .Select(p => new
-            {
-                id = p.Id,
-                odooProductId = p.OdooProductId,
-                odooTemplateId = p.OdooTemplateId,
-                name = p.Name,
-                defaultCode = p.DefaultCode,
-                barcode = p.Barcode,
-                price = p.Price,
-                category = p.CategoryName,
-                brand = p.Brand,
-                inStock = p.InStock,
-                rating = p.Rating,
-                reviewCount = p.ReviewCount,
-                nameOverridden = p.NameOverridden,
-                categoryNameOverridden = p.CategoryNameOverridden,
-                image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
-                description = p.Description,
-                images = p.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + p.Id + "/images/" + i.Id }),
-                specifications = p.Specifications.OrderBy(s => s.Order).Select(s => new { key = s.Key, value = s.Value }),
-                updatedAt = p.UpdatedAt
-            })
-            .FirstOrDefaultAsync();
+        var p = await _db.Products
+            .Include(p => p.Images)
+            .Include(p => p.Specifications)
+            .FirstOrDefaultAsync(p => p.Id == id && p.ApprovalStatus == "approved");
 
-        if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
+        if (p == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
-        return Ok(product);
+        return Ok(new
+        {
+            id = p.Id,
+            odooProductId = p.OdooProductId,
+            odooTemplateId = p.OdooTemplateId,
+            name = p.Name,
+            defaultCode = p.DefaultCode,
+            barcode = p.Barcode,
+            price = p.Price,
+            category = p.CategoryName,
+            categorySlug = GetCategorySlug(p.CategoryName),
+            brand = p.Brand,
+            inStock = p.InStock,
+            rating = p.Rating,
+            reviewCount = p.ReviewCount,
+            nameOverridden = p.NameOverridden,
+            categoryNameOverridden = p.CategoryNameOverridden,
+            image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
+            description = p.Description,
+            images = p.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + p.Id + "/images/" + i.Id }),
+            specifications = p.Specifications.OrderBy(s => s.Order).Select(s => new { key = s.Key, value = s.Value }),
+            updatedAt = p.UpdatedAt
+        });
     }
 
     // Admin panelda "Kategoriya" va "Subkategoriya"ni SELECT orqali tanlash uchun —
@@ -158,23 +205,38 @@ public class ProductsController : ControllerBase
     [HttpGet("pending")]
     public async Task<IActionResult> GetPendingProducts()
     {
-        var items = await _db.Products
+        var raw = await _db.Products
             .Where(p => p.ApprovalStatus == "pending")
             .OrderByDescending(p => p.CreatedAt)
             .Select(p => new
             {
-                id = p.Id,
-                odooProductId = p.OdooProductId,
-                name = p.Name,
-                defaultCode = p.DefaultCode,
-                price = p.Price,
-                category = p.CategoryName,
-                brand = p.Brand,
-                inStock = p.InStock,
-                image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
-                createdAt = p.CreatedAt
+                p.Id,
+                p.OdooProductId,
+                p.Name,
+                p.DefaultCode,
+                p.Price,
+                p.CategoryName,
+                p.Brand,
+                p.InStock,
+                HasImage = p.ImageBase64 != null,
+                p.CreatedAt
             })
             .ToListAsync();
+
+        var items = raw.Select(p => new
+        {
+            id = p.Id,
+            odooProductId = p.OdooProductId,
+            name = p.Name,
+            defaultCode = p.DefaultCode,
+            price = p.Price,
+            category = p.CategoryName,
+            categorySlug = GetCategorySlug(p.CategoryName),
+            brand = p.Brand,
+            inStock = p.InStock,
+            image = p.HasImage ? "/api/products/" + p.Id + "/image" : null,
+            createdAt = p.CreatedAt
+        });
 
         return Ok(items);
     }
@@ -211,6 +273,7 @@ public class ProductsController : ControllerBase
             barcode = product.Barcode,
             price = product.Price,
             category = product.CategoryName,
+            categorySlug = GetCategorySlug(product.CategoryName),
             // Admin edit formasi uchun tayyor bo'laklab berilgan qiymatlar —
             // frontend qayta parse qilishi shart emas (category-options
             // ro'yxatidan qaysi biri hozir tanlanganini shu bilan bilib oladi).
