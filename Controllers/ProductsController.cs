@@ -108,11 +108,40 @@ public class ProductsController : ControllerBase
         return Ok(product);
     }
 
-    // Admin panelda "Kategoriya" tanlash (select) uchun ruxsat etilgan ro'yxat —
-    // frontenddagi CATEGORY_SLUG_MAP bilan aynan mos (izohga q.). Erkin matn emas,
-    // faqat shu ro'yxatdan tanlash orqaligina mahsulot to'g'ri kategoriyaga tushadi.
+    // Admin panelda "Kategoriya" va "Subkategoriya"ni SELECT orqali tanlash uchun —
+    // ikkalasi ham erkin matn EMAS. Kategoriya — frontenddagi CATEGORY_SLUG_MAP bilan
+    // aynan mos qattiq ro'yxat (yuqorida). Subkategoriya — har bir kategoriya ostida
+    // Odoo'dan haqiqatda kelgan (Products jadvalida mavjud) qiymatlar — shunda admin
+    // hech qachon "hech qanday mahsulotda yo'q" subkategoriya kiritolmaydi.
     [HttpGet("category-options")]
-    public IActionResult GetCategoryOptions() => Ok(CategoryOptions);
+    public async Task<IActionResult> GetCategoryOptions()
+    {
+        var allCategoryNames = await _db.Products
+            .Where(p => p.CategoryName != null)
+            .Select(p => p.CategoryName!)
+            .Distinct()
+            .ToListAsync();
+
+        var subcategoriesByTop = new Dictionary<string, SortedSet<string>>();
+        foreach (var top in CategoryOptions) subcategoriesByTop[top] = new SortedSet<string>();
+
+        foreach (var raw in allCategoryNames)
+        {
+            var (top, leaf) = ParseCategoryPath(raw);
+            if (top != null && leaf != null && subcategoriesByTop.ContainsKey(top))
+            {
+                subcategoriesByTop[top].Add(leaf);
+            }
+        }
+
+        var result = CategoryOptions.Select(top => new
+        {
+            category = top,
+            subcategories = subcategoriesByTop[top].ToList()
+        });
+
+        return Ok(result);
+    }
 
     // Odoo'dan yangi kelgan, admin hali tasdiqlamagan mahsulotlar ro'yxati —
     // ochiq katalogda (GET /api/Products) ko'rinmaydi, faqat shu yerda ko'rinadi.
@@ -272,6 +301,30 @@ public class ProductsController : ControllerBase
             if (string.IsNullOrWhiteSpace(dto.Subcategory))
             {
                 return BadRequest(new { message = "Subkategoriya bo'sh bo'lishi mumkin emas." });
+            }
+
+            // Subkategoriya ham erkin matn EMAS — faqat shu Kategoriya ostida Odoo'dan
+            // haqiqatda kelgan (boshqa mahsulotlarda mavjud) qiymatlardan biri bo'lishi
+            // kerak (GET /category-options shu ro'yxatni beradi).
+            var validSubcategories = await _db.Products
+                .Where(p => p.CategoryName != null)
+                .Select(p => p.CategoryName!)
+                .Distinct()
+                .ToListAsync();
+            var knownForCategory = validSubcategories
+                .Select(ParseCategoryPath)
+                .Where(t => t.Top == dto.Category && t.Leaf != null)
+                .Select(t => t.Leaf!)
+                .ToHashSet();
+
+            if (!knownForCategory.Contains(dto.Subcategory))
+            {
+                return BadRequest(new
+                {
+                    message = knownForCategory.Count > 0
+                        ? $"\"{dto.Category}\" kategoriyasi uchun subkategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", knownForCategory)}"
+                        : $"\"{dto.Category}\" kategoriyasi uchun hali hech qanday ma'lum subkategoriya yo'q."
+                });
             }
 
             // "Hammasi / {Category} / {Subcategory}" — frontend faqat birinchi va
