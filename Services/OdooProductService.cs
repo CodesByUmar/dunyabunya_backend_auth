@@ -48,14 +48,23 @@ public class OdooProductService : IOdooProductService
 
         var uid = await AuthenticateAsync(db, username, apiKey);
 
-        // 1) is_published=true bo'lgan barcha VARIANTLAR (product.product)
+        // 1) is_published=true bo'lgan barcha VARIANTLAR (product.product).
+        // MUHIM: "limit" va "order" ANIQ ko'rsatilishi SHART. Aks holda Odoo'ning
+        // o'zi ba'zan (aniqlanmagan ichki sabablarga ko'ra — ehtimol standart
+        // tartiblanmagan natija to'plamining "chekka"sida) bir xil so'rovga har safar
+        // BIRXIL SONDAGI, lekin BOSHQA-BOSHQA ID'lardan iborat natija qaytarishi
+        // kuzatildi — natijada allaqachon tasdiqlangan mahsulot navbatdagi
+        // sinxronizatsiyada Odoo ro'yxatida "yo'q" bo'lib chiqib, qayta "pending"ga
+        // o'tkazib yuborilardi. Aniq order + katta limit shu nomuvofiqlikni bartaraf qiladi.
         var variants = await CallAsync("object", "execute_kw", new object[]
         {
             db, uid, apiKey, "product.product", "search_read",
             new object[] { new object[] { new object[] { "is_published", "=", true } } },
             new Dictionary<string, object>
             {
-                ["fields"] = new[] { "id", "display_name", "default_code", "barcode", "standard_price", "categ_id", "product_tmpl_id", "qty_available" }
+                ["fields"] = new[] { "id", "display_name", "default_code", "barcode", "standard_price", "categ_id", "product_tmpl_id", "qty_available" },
+                ["order"] = "id asc",
+                ["limit"] = 100000
             }
         });
         var variantList = variants.EnumerateArray().ToList();
@@ -123,7 +132,7 @@ public class OdooProductService : IOdooProductService
                     new object[] { "product_id", "in", variantIds.Cast<object>().ToArray() }
                 }
             },
-            new Dictionary<string, object> { ["fields"] = new[] { "product_id", "fixed_price", "compute_price" } }
+            new Dictionary<string, object> { ["fields"] = new[] { "product_id", "fixed_price", "compute_price" }, ["limit"] = 100000 }
         });
 
         foreach (var item in items.EnumerateArray())
@@ -148,7 +157,7 @@ public class OdooProductService : IOdooProductService
         {
             db, uid, apiKey, "product.template.attribute.line", "search_read",
             new object[] { new object[] { new object[] { "product_tmpl_id", "in", templateIds.Cast<object>().ToArray() }, new object[] { "attribute_id", "=", BrendAttributeId } } },
-            new Dictionary<string, object> { ["fields"] = new[] { "product_tmpl_id", "value_ids" } }
+            new Dictionary<string, object> { ["fields"] = new[] { "product_tmpl_id", "value_ids" }, ["limit"] = 100000 }
         });
 
         var templateToBrandValueId = new Dictionary<int, int>();
