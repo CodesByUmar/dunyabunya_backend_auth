@@ -34,6 +34,16 @@ public class ProductSyncBackgroundService : BackgroundService
     private int _consecutiveSuspiciousDrops;
     private const int MaxConsecutiveSkips = 3;
 
+    // Odoo'ning "is_published=true" so'rovi (search_read) vaqti-vaqti bilan, aniqlanmagan
+    // sababga ko'ra, allaqachon nashr etilgan bitta-ikkita mahsulotni natijadan TASODIFIY
+    // tashlab qoldirishi kuzatildi (326 tadan atigi 1-2 tasi — "ommaviy pasayish" himoyasi
+    // buni ilg'amaydi, chunki u faqat 50%+ pasayishni tekshiradi). Bunga ishonib, mahsulotni
+    // darhol "pending"ga o'tkazib yuborsak — admin tasdiqlagan mahsulot bir necha daqiqada
+    // o'zi-o'zidan qaytib ketaverardi. Shuning uchun bitta mahsulot Odoo ro'yxatida KETMA-KET
+    // bir necha marta yo'q bo'lgandagina (tasodifiy emasligi aniqlangach) "pending"ga o'tkaziladi.
+    private readonly Dictionary<int, int> _missingStreak = new();
+    private const int MinConsecutiveMissesToHide = 3;
+
     public ProductSyncBackgroundService(IServiceProvider services, IConfiguration config, ILogger<ProductSyncBackgroundService> logger)
     {
         _services = services;
@@ -179,7 +189,36 @@ public class ProductSyncBackgroundService : BackgroundService
         // xususiyatlar/sharhlar har safar yo'qolib, qaytadan yoqilganda hammasi
         // yo'qotilgan bo'lardi. Admin qaytadan is_published qilsa, mahsulot "existing"
         // sifatida topilib, o'z holicha (pending) qoladi — qayta tasdiqlash kifoya.
-        var toHide = existing.Where(p => !freshIds.Contains(p.OdooProductId) && p.ApprovalStatus != "pending").ToList();
+        //
+        // Lekin buni Odoo'dan bir martalik (ehtimol vaqtinchalik) yo'qligiga qarab
+        // darhol qilmaymiz — ketma-ket MinConsecutiveMissesToHide marta yo'q bo'lsagina.
+        var toHide = new List<Product>();
+        foreach (var p in existing)
+        {
+            if (freshIds.Contains(p.OdooProductId))
+            {
+                _missingStreak.Remove(p.OdooProductId);
+                continue;
+            }
+
+            if (p.ApprovalStatus == "pending") continue;
+
+            var streak = _missingStreak.GetValueOrDefault(p.OdooProductId) + 1;
+            _missingStreak[p.OdooProductId] = streak;
+
+            if (streak >= MinConsecutiveMissesToHide)
+            {
+                toHide.Add(p);
+                _missingStreak.Remove(p.OdooProductId);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Product sync: OdooProductId={OdooProductId} Odoo ro'yxatida yo'q ({Streak}/{Max} marta ketma-ket) — hali \"pending\"ga o'tkazilmadi, ehtimol vaqtinchalik.",
+                    p.OdooProductId, streak, MinConsecutiveMissesToHide);
+            }
+        }
+
         foreach (var p in toHide) p.ApprovalStatus = "pending";
 
         await db.SaveChangesAsync(ct);
