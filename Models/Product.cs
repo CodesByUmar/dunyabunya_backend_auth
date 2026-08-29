@@ -20,14 +20,18 @@ public class Product
     public string? Brand { get; set; }
     public bool InStock { get; set; }
 
-    // Admin panel orqali Name qo'lda tahrirlangan bo'lsa true bo'ladi —
-    // ProductSyncBackgroundService shundan keyin bu maydonga endi tegmaydi (Odoo'dan
-    // kelgan qiymat bilan ustidan yozib yubormaydi). Narx (Price) va Kategoriya
-    // (CategoryName) admin tomonidan tahrirlanmaydi — doim Odoo'dan sinxronlanadi
-    // (CategoryName frontendning kategoriya-filtrlash mantig'i original Odoo yo'liga
-    // qattiq bog'langan — uni o'zgartirish katalogda "kategoriyasiz" bo'lib qolishga
-    // olib keladi, frontend to'g'ri tuzatilmaguncha bu maydon tahrirlanmaydi).
+    // Admin panel orqali Name/CategoryName qo'lda tahrirlangan bo'lsa true bo'ladi —
+    // ProductSyncBackgroundService shundan keyin bu maydonlarga endi tegmaydi (Odoo'dan
+    // kelgan qiymat bilan ustidan yozib yubormaydi). Narx (Price) admin tomonidan
+    // umuman tahrirlanmaydi — doim Odoo'dan sinxronlanadi.
+    //
+    // MUHIM: CategoryName frontendning kategoriya-filtrlash mantig'i faqat ma'lum
+    // (qattiq yozilgan) original Odoo yo'liga mos kelganda ishlaydi. Shuning uchun
+    // bu maydon ERKIN matn sifatida TAHRIRLANMAYDI — faqat ProductsController'dagi
+    // CategoryOptions ro'yxatidan tanlangan (kafolatlangan to'g'ri) qiymat orqali
+    // "Hammasi / {category} / {subcategory}" shaklida qayta tuzilib yoziladi.
     public bool NameOverridden { get; set; }
+    public bool CategoryNameOverridden { get; set; }
 
     // Odoo'dan YANGI kelgan mahsulot avtomatik "pending" bilan saqlanadi va admin
     // tasdiqlamaguncha ochiq katalogda (GET /api/Products) ko'rinmaydi. Sync xizmati

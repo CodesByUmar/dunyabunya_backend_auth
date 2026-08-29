@@ -5,12 +5,17 @@ public class UpdateProductDescriptionDto
     public string? Description { get; set; }
 }
 
-// Faqat Name — Narx (Price) va Kategoriya (CategoryName) admin panelda
-// tahrirlanmaydi (Kategoriya frontendning original Odoo yo'liga qattiq
-// bog'langan mantig'i tuzatilmaguncha xavfli — "Kategoriya tahriri" ADR'ga q.).
+// Narx (Price) BU YERDA YO'Q — admin panelda umuman tahrirlanmaydi.
+// Category — ERKIN matn EMAS, faqat GET /api/products/category-options
+// ro'yxatidagi qiymatlardan biri bo'lishi shart (aks holda frontendning
+// kategoriya-filtrlash mantig'i mahsulotni "kategoriyasiz" qilib qo'yadi).
+// Subcategory — erkin matn (frontend uni faqat ko'rsatish uchun ishlatadi,
+// qattiq yozilgan ro'yxatga bog'liq emas).
 public class UpdateProductDetailsDto
 {
     public string? Name { get; set; }
+    public string? Category { get; set; }
+    public string? Subcategory { get; set; }
 }
 
 public class ProductSpecificationDto

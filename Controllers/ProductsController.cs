@@ -9,21 +9,30 @@ namespace AuthApi.Controllers;
 // Frontend uchun — Odoo'dan sinxronlangan (is_published=true) mahsulotlar.
 // Ochiq (public), autentifikatsiya talab qilinmaydi — katalog hammaga ko'rinadi.
 //
-// MUHIM: Narx/Kategoriya/Brend/Ombor holati (Price/CategoryName/Brand/InStock)
-// har doim Odoo'dan avtomatik qayta yoziladi (ProductSyncBackgroundService) —
-// bularni o'zgartiradigan endpoint YO'Q. (CategoryName'ni admin panel orqali
-// tahrirlash imkoni bir muddat bor edi, lekin frontendning kategoriya-filtrlash
-// mantig'i original Odoo yo'liga qattiq bog'langani sabab "kategoriyasiz" bo'lib
-// qolish xatosiga olib keldi — frontend to'g'ri tuzatilmaguncha o'chirilgan.)
-// Faqat Nomi (Name) admin panel orqali qo'lda tahrirlanishi mumkin (pastda,
-// /details) — bir marta tahrirlansa, keyingi sync bu maydonga endi tegmaydi.
-// Rasm/Tavsif ham sync tegmagani uchun admin panel orqali xavfsiz boshqariladi.
+// MUHIM: Narx/Brend/Ombor holati (Price/Brand/InStock) har doim Odoo'dan
+// avtomatik qayta yoziladi (ProductSyncBackgroundService) — bularni
+// o'zgartiradigan endpoint YO'Q. Nomi (Name) admin panel orqali erkin
+// tahrirlanadi. Kategoriya (CategoryName) esa ERKIN MATN sifatida
+// tahrirlanmaydi — frontendning kategoriya-filtrlash mantig'i faqat
+// CategoryOptions ro'yxatidagi (pastda) original Odoo nomlariga mos kelganda
+// ishlaydi, boshqa har qanday matn mahsulotni "kategoriyasiz" qilib qo'yadi.
+// Shuning uchun admin faqat shu ro'yxatdan TANLAYDI (select), erkin yozmaydi.
 [ApiController]
 [Route("api/[controller]")]
 public class ProductsController : ControllerBase
 {
     private const long MaxImageBytes = 5 * 1024 * 1024; // 5 MB
     private const int MaxGalleryImages = 8;
+
+    // Frontenddagi CATEGORY_SLUG_MAP (src/lib/api.ts) bilan AYNAN mos —
+    // faqat shu nomlardan biri bo'lsa, mahsulot katalog filtrida to'g'ri
+    // kategoriyaga tushadi. Bu yerda o'zgartirilsa, frontenddagi map bilan
+    // ham albatta sinxronlab turilishi kerak.
+    private static readonly string[] CategoryOptions =
+    {
+        "Elektrika", "Muhandislik tizimlari", "Qurilish mahsulotlari",
+        "Yakuniy qoplamalar", "Mahkamlagichlar", "Instrumentlar"
+    };
 
     private readonly AppDbContext _db;
 
@@ -85,6 +94,7 @@ public class ProductsController : ControllerBase
                 rating = p.Rating,
                 reviewCount = p.ReviewCount,
                 nameOverridden = p.NameOverridden,
+                categoryNameOverridden = p.CategoryNameOverridden,
                 image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
                 description = p.Description,
                 images = p.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + p.Id + "/images/" + i.Id }),
@@ -97,6 +107,12 @@ public class ProductsController : ControllerBase
 
         return Ok(product);
     }
+
+    // Admin panelda "Kategoriya" tanlash (select) uchun ruxsat etilgan ro'yxat —
+    // frontenddagi CATEGORY_SLUG_MAP bilan aynan mos (izohga q.). Erkin matn emas,
+    // faqat shu ro'yxatdan tanlash orqaligina mahsulot to'g'ri kategoriyaga tushadi.
+    [HttpGet("category-options")]
+    public IActionResult GetCategoryOptions() => Ok(CategoryOptions);
 
     // Odoo'dan yangi kelgan, admin hali tasdiqlamagan mahsulotlar ro'yxati —
     // ochiq katalogda (GET /api/Products) ko'rinmaydi, faqat shu yerda ko'rinadi.
@@ -134,34 +150,57 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> GetProductForAdmin(int id)
     {
         var product = await _db.Products
-            .Where(p => p.Id == id)
-            .Select(p => new
-            {
-                id = p.Id,
-                odooProductId = p.OdooProductId,
-                odooTemplateId = p.OdooTemplateId,
-                name = p.Name,
-                defaultCode = p.DefaultCode,
-                barcode = p.Barcode,
-                price = p.Price,
-                category = p.CategoryName,
-                brand = p.Brand,
-                inStock = p.InStock,
-                rating = p.Rating,
-                reviewCount = p.ReviewCount,
-                nameOverridden = p.NameOverridden,
-                approvalStatus = p.ApprovalStatus,
-                image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
-                description = p.Description,
-                images = p.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + p.Id + "/images/" + i.Id }),
-                specifications = p.Specifications.OrderBy(s => s.Order).Select(s => new { key = s.Key, value = s.Value }),
-                updatedAt = p.UpdatedAt
-            })
-            .FirstOrDefaultAsync();
+            .Include(p => p.Images)
+            .Include(p => p.Specifications)
+            .FirstOrDefaultAsync(p => p.Id == id);
 
         if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
-        return Ok(product);
+        var (categoryTop, categoryLeaf) = ParseCategoryPath(product.CategoryName);
+
+        return Ok(new
+        {
+            id = product.Id,
+            odooProductId = product.OdooProductId,
+            odooTemplateId = product.OdooTemplateId,
+            name = product.Name,
+            defaultCode = product.DefaultCode,
+            barcode = product.Barcode,
+            price = product.Price,
+            category = product.CategoryName,
+            // Admin edit formasi uchun tayyor bo'laklab berilgan qiymatlar —
+            // frontend qayta parse qilishi shart emas (category-options
+            // ro'yxatidan qaysi biri hozir tanlanganini shu bilan bilib oladi).
+            categoryTop,
+            categorySubcategory = categoryLeaf,
+            brand = product.Brand,
+            inStock = product.InStock,
+            rating = product.Rating,
+            reviewCount = product.ReviewCount,
+            nameOverridden = product.NameOverridden,
+            categoryNameOverridden = product.CategoryNameOverridden,
+            approvalStatus = product.ApprovalStatus,
+            image = product.ImageBase64 != null ? "/api/products/" + product.Id + "/image" : null,
+            description = product.Description,
+            images = product.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + product.Id + "/images/" + i.Id }),
+            specifications = product.Specifications.OrderBy(s => s.Order).Select(s => new { key = s.Key, value = s.Value }),
+            updatedAt = product.UpdatedAt
+        });
+    }
+
+    // "Hammasi / Elektrika / Past kuchlanishli uskunalar / AVR" -> ("Elektrika", "AVR").
+    // Frontend'ning src/lib/api.ts:mapBackendCategoryPath bilan bir xil mantiq —
+    // birinchi (Hammasi'dan keyingi) bo'lak "kategoriya", oxirgi bo'lak "subkategoriya".
+    private static (string? Top, string? Leaf) ParseCategoryPath(string? categoryName)
+    {
+        if (string.IsNullOrWhiteSpace(categoryName)) return (null, null);
+
+        var segments = categoryName.Split('/', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Where(s => s != "Hammasi")
+            .ToList();
+
+        if (segments.Count == 0) return (null, null);
+        return (segments[0], segments[^1]);
     }
 
     // Admin yangi mahsulotni tasdiqlaydi (ochiq katalogda ko'rinadi) yoki rad etadi
@@ -202,10 +241,10 @@ public class ProductsController : ControllerBase
     // Nomi — Odoo'dan sinxronlanadi, lekin admin qo'lda to'g'irlashi mumkin
     // (masalan Odoo'dagi nom noqulay/xato bo'lsa). Bir marta tahrirlansa,
     // keyingi Odoo sinxronizatsiyalari bu maydonga endi tegmaydi (NameOverridden —
-    // ProductSyncBackgroundService shunga qaraydi). Narx va Kategoriya BU YERDA
-    // YO'Q — ikkalasi ham har doim faqat Odoo'dan keladi, admin tomonidan
-    // tahrirlanishi mumkin emas (Kategoriya — frontendning kategoriya-filtrlash
-    // mantig'i original Odoo yo'liga qattiq bog'langani sabab, vaqtincha o'chirilgan).
+    // ProductSyncBackgroundService shunga qaraydi). Narx BU YERDA YO'Q — har doim
+    // faqat Odoo'dan keladi. Kategoriya (Category+Subcategory) — ERKIN MATN emas,
+    // Category faqat CategoryOptions ro'yxatidagi qiymatlardan biri bo'lishi shart
+    // (aks holda BadRequest) — shundagina frontend to'g'ri taniydi.
     [RequireSection("products")]
     [HttpPatch("{id:int}/details")]
     public async Task<IActionResult> UpdateProductDetails(int id, UpdateProductDetailsDto dto)
@@ -223,9 +262,27 @@ public class ProductsController : ControllerBase
             product.NameOverridden = true;
         }
 
+        if (dto.Category != null)
+        {
+            if (!CategoryOptions.Contains(dto.Category))
+            {
+                return BadRequest(new { message = $"Kategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", CategoryOptions)}" });
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.Subcategory))
+            {
+                return BadRequest(new { message = "Subkategoriya bo'sh bo'lishi mumkin emas." });
+            }
+
+            // "Hammasi / {Category} / {Subcategory}" — frontend faqat birinchi va
+            // oxirgi bo'lakni o'qiydi, o'rtadagi bo'lak muhim emas (q. ParseCategoryPath).
+            product.CategoryName = $"Hammasi / {dto.Category} / {dto.Subcategory}";
+            product.CategoryNameOverridden = true;
+        }
+
         await _db.SaveChangesAsync();
 
-        return Ok(new { product.Id, product.Name });
+        return Ok(new { product.Id, product.Name, product.CategoryName });
     }
 
     // Xususiyatlar jadvali (masalan "Akkumulyator" -> "18 V Li-Ion") — butun
