@@ -33,6 +33,14 @@ public class Product
     public bool NameOverridden { get; set; }
     public bool CategoryNameOverridden { get; set; }
 
+    // Admin PATCH /details orqali tanlagan subkategoriyaning Subcategories
+    // jadvalidagi (mijoz katalogda ko'radigan, kurator qilingan) Slug'i —
+    // CategoryName'dagi Odoo'ning xom oxirgi bo'lagidan farqli o'laroq, bu
+    // maydon GET /api/categories'dagi Subcategory.Slug bilan AYNAN bir xil,
+    // shuning uchun frontend katalogning subkategoriya filtri to'g'ri ishlashi
+    // uchun to'g'ridan-to'g'ri solishtira oladi. Tanlanmagan bo'lsa null.
+    public string? SubcategorySlug { get; set; }
+
     // Odoo'dan YANGI kelgan mahsulot avtomatik "pending" bilan saqlanadi va admin
     // tasdiqlamaguncha ochiq katalogda (GET /api/Products) ko'rinmaydi. Sync xizmati
     // faqat yangi qatorlar uchun "pending" qo'yadi — mavjud mahsulotni yangilashda bu

@@ -625,6 +625,9 @@ namespace AuthApi.Migrations
                     b.Property<int>("ReviewCount")
                         .HasColumnType("integer");
 
+                    b.Property<string>("SubcategorySlug")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 

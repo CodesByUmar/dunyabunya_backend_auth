@@ -92,6 +92,7 @@ public class ProductsController : ControllerBase
                 p.Barcode,
                 p.Price,
                 p.CategoryName,
+                p.SubcategorySlug,
                 p.Brand,
                 p.InStock,
                 p.Rating,
@@ -115,6 +116,7 @@ public class ProductsController : ControllerBase
             price = p.Price,
             category = p.CategoryName,
             categorySlug = GetCategorySlug(p.CategoryName),
+            subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
             rating = p.Rating,
@@ -147,6 +149,7 @@ public class ProductsController : ControllerBase
             price = p.Price,
             category = p.CategoryName,
             categorySlug = GetCategorySlug(p.CategoryName),
+            subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
             rating = p.Rating,
@@ -165,35 +168,34 @@ public class ProductsController : ControllerBase
     // ikkalasi ham erkin matn EMAS. Kategoriya sifatida MIJOZ ko'radigan nom
     // qaytariladi (masalan "Santexnika"), Odoo'ning ichki nomi ("Muhandislik
     // tizimlari") admin'ga umuman ko'rsatilmaydi — shunday bo'lmasa admin
-    // saytdagi qaysi bo'limga tegishli ekanini bilolmay chalkashadi. Subkategoriya —
-    // har bir kategoriya ostida Odoo'dan haqiqatda kelgan (Products jadvalida
-    // mavjud) qiymatlar — shunda admin hech qachon "hech qanday mahsulotda yo'q"
-    // subkategoriya kiritolmaydi.
+    // saytdagi qaysi bo'limga tegishli ekanini bilolmay chalkashadi.
+    //
+    // MUHIM (2026-08-30 tuzatildi): Subkategoriya endi Odoo'dan xom kelgan
+    // qiymatlar EMAS — Categories/Subcategories jadvalidagi (mijoz katalogda
+    // ko'radigan, kurator qilingan) nomlar. Sabab: Odoo'ning xom subkategoriya
+    // nomlari (masalan "AVR") mijoz katalogining subkategoriya filtridagi
+    // slug'lar bilan HECH QACHON mos kelmasdi (butunlay boshqa lug'at), shuning
+    // uchun subkategoriya bo'yicha filtrlash har doim bo'sh natija berardi.
+    // Endi admin xuddi mijoz ko'radigan bo'limlardan birini tanlaydi — shuning
+    // uchun UpdateProductDetails endi kafolatlangan to'g'ri Subcategory.Slug'ni
+    // saqlay oladi (pastda, SubcategorySlug).
     [HttpGet("category-options")]
     public async Task<IActionResult> GetCategoryOptions()
     {
-        var allCategoryNames = await _db.Products
-            .Where(p => p.CategoryName != null)
-            .Select(p => p.CategoryName!)
-            .Distinct()
+        var categories = await _db.Categories
+            .Include(c => c.Subcategories)
+            .Where(c => OdooToCategorySlug.Values.Contains(c.Slug))
             .ToListAsync();
+        var categoriesBySlug = categories.ToDictionary(c => c.Slug);
 
-        var subcategoriesByOdooTop = new Dictionary<string, SortedSet<string>>();
-        foreach (var odooTop in CategoryDisplayToOdoo.Values) subcategoriesByOdooTop[odooTop] = new SortedSet<string>();
-
-        foreach (var raw in allCategoryNames)
+        var result = CategoryDisplayToOdoo.Select(kv =>
         {
-            var (top, leaf) = ParseCategoryPath(raw);
-            if (top != null && leaf != null && subcategoriesByOdooTop.ContainsKey(top))
-            {
-                subcategoriesByOdooTop[top].Add(leaf);
-            }
-        }
+            var categorySlug = OdooToCategorySlug[kv.Value];
+            var subcategories = categoriesBySlug.TryGetValue(categorySlug, out var cat)
+                ? cat.Subcategories.OrderBy(s => s.Order).Select(s => s.NameRu).ToList()
+                : new List<string>();
 
-        var result = CategoryDisplayToOdoo.Select(kv => new
-        {
-            category = kv.Key,
-            subcategories = subcategoriesByOdooTop[kv.Value].ToList()
+            return new { category = kv.Key, subcategories };
         });
 
         return Ok(result);
@@ -216,6 +218,7 @@ public class ProductsController : ControllerBase
                 p.DefaultCode,
                 p.Price,
                 p.CategoryName,
+                p.SubcategorySlug,
                 p.Brand,
                 p.InStock,
                 HasImage = p.ImageBase64 != null,
@@ -232,6 +235,7 @@ public class ProductsController : ControllerBase
             price = p.Price,
             category = p.CategoryName,
             categorySlug = GetCategorySlug(p.CategoryName),
+            subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
             image = p.HasImage ? "/api/products/" + p.Id + "/image" : null,
@@ -274,6 +278,7 @@ public class ProductsController : ControllerBase
             price = product.Price,
             category = product.CategoryName,
             categorySlug = GetCategorySlug(product.CategoryName),
+            subcategorySlug = product.SubcategorySlug,
             // Admin edit formasi uchun tayyor bo'laklab berilgan qiymatlar —
             // frontend qayta parse qilishi shart emas (category-options
             // ro'yxatidan qaysi biri hozir tanlanganini shu bilan bilib oladi).
@@ -382,26 +387,27 @@ public class ProductsController : ControllerBase
                 return BadRequest(new { message = "Subkategoriya bo'sh bo'lishi mumkin emas." });
             }
 
-            // Subkategoriya ham erkin matn EMAS — faqat shu Kategoriya ostida Odoo'dan
-            // haqiqatda kelgan (boshqa mahsulotlarda mavjud) qiymatlardan biri bo'lishi
-            // kerak (GET /category-options shu ro'yxatni beradi).
-            var validSubcategories = await _db.Products
-                .Where(p => p.CategoryName != null)
-                .Select(p => p.CategoryName!)
-                .Distinct()
-                .ToListAsync();
-            var knownForCategory = validSubcategories
-                .Select(ParseCategoryPath)
-                .Where(t => t.Top == odooCategory && t.Leaf != null)
-                .Select(t => t.Leaf!)
-                .ToHashSet();
+            // Subkategoriya ham erkin matn EMAS — faqat shu Kategoriya ostida
+            // Categories/Subcategories jadvalidagi (mijoz katalogda ko'radigan,
+            // kurator qilingan) nomlardan biri bo'lishi kerak (GET /category-options
+            // shu ro'yxatni beradi — 2026-08-30dan buyon Odoo emas, shu jadvaldan).
+            var categorySlug = OdooToCategorySlug[odooCategory];
+            var subcategoryRow = await _db.Subcategories
+                .Include(s => s.Category)
+                .Where(s => s.Category.Slug == categorySlug)
+                .FirstOrDefaultAsync(s => s.NameRu == dto.Subcategory);
 
-            if (!knownForCategory.Contains(dto.Subcategory))
+            if (subcategoryRow == null)
             {
+                var known = await _db.Subcategories
+                    .Where(s => s.Category.Slug == categorySlug)
+                    .Select(s => s.NameRu)
+                    .ToListAsync();
+
                 return BadRequest(new
                 {
-                    message = knownForCategory.Count > 0
-                        ? $"\"{dto.Category}\" kategoriyasi uchun subkategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", knownForCategory)}"
+                    message = known.Count > 0
+                        ? $"\"{dto.Category}\" kategoriyasi uchun subkategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", known)}"
                         : $"\"{dto.Category}\" kategoriyasi uchun hali hech qanday ma'lum subkategoriya yo'q."
                 });
             }
@@ -410,6 +416,7 @@ public class ProductsController : ControllerBase
             // oxirgi bo'lakni o'qiydi, o'rtadagi bo'lak muhim emas (q. ParseCategoryPath).
             product.CategoryName = $"Hammasi / {odooCategory} / {dto.Subcategory}";
             product.CategoryNameOverridden = true;
+            product.SubcategorySlug = subcategoryRow.Slug;
         }
 
         await _db.SaveChangesAsync();
