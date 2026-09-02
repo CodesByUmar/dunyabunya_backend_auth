@@ -400,13 +400,35 @@ public class ProductsController : ControllerBase
             product.NameOverridden = true;
         }
 
-        if (dto.Category != null)
+        // MUHIM (tuzatildi): avval bu blok FAQAT dto.Category berilganda ishga
+        // tushardi. Agar admin faqat Subkategoriyani o'zgartirsa (Kategoriya
+        // allaqachon to'g'ri bo'lgani uchun frontend uni "o'zgarmagan" deb
+        // umuman yubormasa) — Subkategoriya ham butunlay e'tiborsiz qoldirilar
+        // edi (mahsulot "Ichki kategoriyasiz"da qolib ketardi). Endi
+        // dto.Subcategory yolg'iz kelsa ham, mahsulotning HOZIRGI kategoriyasi
+        // asos qilib olinadi.
+        if (dto.Category != null || dto.Subcategory != null)
         {
-            // dto.Category — mijoz ko'radigan nom (masalan "Santexnika"). Odoo'ning
-            // ichki nomiga ("Muhandislik tizimlari") shu orqali o'giriladi.
-            if (!CategoryDisplayToOdoo.TryGetValue(dto.Category, out var odooCategory))
+            string odooCategory;
+
+            if (dto.Category != null)
             {
-                return BadRequest(new { message = $"Kategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", CategoryDisplayToOdoo.Keys)}" });
+                // dto.Category — mijoz ko'radigan nom (masalan "Santexnika"). Odoo'ning
+                // ichki nomiga ("Muhandislik tizimlari") shu orqali o'giriladi.
+                if (!CategoryDisplayToOdoo.TryGetValue(dto.Category, out var mappedCategory))
+                {
+                    return BadRequest(new { message = $"Kategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", CategoryDisplayToOdoo.Keys)}" });
+                }
+                odooCategory = mappedCategory;
+            }
+            else
+            {
+                var (currentTop, _) = ParseCategoryPath(product.CategoryName);
+                if (currentTop == null || !OdooToCategorySlug.ContainsKey(currentTop))
+                {
+                    return BadRequest(new { message = "Subkategoriyani belgilashdan oldin avval Kategoriyani tanlang." });
+                }
+                odooCategory = currentTop;
             }
 
             if (string.IsNullOrWhiteSpace(dto.Subcategory))
@@ -434,11 +456,12 @@ public class ProductsController : ControllerBase
                     .Select(s => s.NameRu)
                     .ToListAsync();
 
+                var displayCategory = dto.Category ?? CategoryDisplayToOdoo.FirstOrDefault(kv => kv.Value == odooCategory).Key;
                 return BadRequest(new
                 {
                     message = known.Count > 0
-                        ? $"\"{dto.Category}\" kategoriyasi uchun subkategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", known)}"
-                        : $"\"{dto.Category}\" kategoriyasi uchun hali hech qanday ma'lum subkategoriya yo'q."
+                        ? $"\"{displayCategory}\" kategoriyasi uchun subkategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", known)}"
+                        : $"\"{displayCategory}\" kategoriyasi uchun hali hech qanday ma'lum subkategoriya yo'q."
                 });
             }
 
