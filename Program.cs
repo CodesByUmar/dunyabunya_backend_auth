@@ -67,6 +67,13 @@ builder.Services.AddHttpClient<IGeocodingService, YandexGeocodingService>(client
     client.Timeout = TimeSpan.FromSeconds(5);
 });
 
+// Admin panelda RU matndan UZ tarjima TAKLIFI olish uchun (Gemini API).
+builder.Services.AddHttpClient<ITranslationService, GeminiTranslationService>(client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
+
 // Product:SyncEnabled=false orqali vaqtincha o'chirish mumkin — masalan bazadan
 // takroriy noto'g'ri bo'sh natija qaytib, mahsulot ID'lari beqaror bo'lib qolsa,
 // sababi tekshirilayotgan vaqtda fon jarayonini to'xtatib turish uchun.
