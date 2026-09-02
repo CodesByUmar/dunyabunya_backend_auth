@@ -594,7 +594,10 @@ namespace AuthApi.Migrations
                     b.Property<string>("DefaultCode")
                         .HasColumnType("text");
 
-                    b.Property<string>("Description")
+                    b.Property<string>("DescriptionRu")
+                        .HasColumnType("text");
+
+                    b.Property<string>("DescriptionUz")
                         .HasColumnType("text");
 
                     b.Property<string>("ImageBase64")
@@ -685,7 +688,11 @@ namespace AuthApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Key")
+                    b.Property<string>("KeyRu")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("KeyUz")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -695,7 +702,11 @@ namespace AuthApi.Migrations
                     b.Property<int>("ProductId")
                         .HasColumnType("integer");
 
-                    b.Property<string>("Value")
+                    b.Property<string>("ValueRu")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ValueUz")
                         .IsRequired()
                         .HasColumnType("text");
 

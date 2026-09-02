@@ -2,7 +2,8 @@ namespace AuthApi.Models;
 
 public class UpdateProductDescriptionDto
 {
-    public string? Description { get; set; }
+    public string? DescriptionRu { get; set; }
+    public string? DescriptionUz { get; set; }
 }
 
 // Narx (Price) BU YERDA YO'Q — admin panelda umuman tahrirlanmaydi.
@@ -20,8 +21,10 @@ public class UpdateProductDetailsDto
 
 public class ProductSpecificationDto
 {
-    public string Key { get; set; } = string.Empty;
-    public string Value { get; set; } = string.Empty;
+    public string KeyRu { get; set; } = string.Empty;
+    public string KeyUz { get; set; } = string.Empty;
+    public string ValueRu { get; set; } = string.Empty;
+    public string ValueUz { get; set; } = string.Empty;
 }
 
 public class ProductApprovalDto

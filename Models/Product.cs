@@ -69,8 +69,12 @@ public class Product
 
     // Odoo'da bu mahsulotlar uchun tavsif/xususiyat kiritilmagan (tekshirilgan),
     // shuning uchun admin panel orqali qo'lda to'ldiriladi — sync bu maydonga
-    // tegmaydi (rasm kabi xavfsiz).
-    public string? Description { get; set; }
+    // tegmaydi (rasm kabi xavfsiz). Ikkala til alohida saqlanadi (Banners'dagi
+    // TitleRu/TitleUz bilan bir xil uslub) — Translations jadvali orqali emas,
+    // chunki bu matn faqat shu bitta mahsulotga tegishli, boshqa joyda
+    // qayta ishlatilmaydi.
+    public string? DescriptionRu { get; set; }
+    public string? DescriptionUz { get; set; }
 
     public List<ProductImage> Images { get; set; } = new();
     public List<ProductSpecification> Specifications { get; set; } = new();
@@ -92,13 +96,16 @@ public class ProductImage
 }
 
 // Xususiyatlar jadvali (masalan "Akkumulyator" -> "18 V Li-Ion") — Odoo'da
-// mavjud emas, faqat admin panel orqali qo'lda kiritiladi.
+// mavjud emas, faqat admin panel orqali qo'lda kiritiladi. Kalit va qiymat
+// ikkalasi ham ikki tilda alohida saqlanadi.
 public class ProductSpecification
 {
     public int Id { get; set; }
     public int ProductId { get; set; }
     public Product Product { get; set; } = null!;
-    public string Key { get; set; } = string.Empty;
-    public string Value { get; set; } = string.Empty;
+    public string KeyRu { get; set; } = string.Empty;
+    public string KeyUz { get; set; } = string.Empty;
+    public string ValueRu { get; set; } = string.Empty;
+    public string ValueUz { get; set; } = string.Empty;
     public int Order { get; set; }
 }

@@ -157,9 +157,10 @@ public class ProductsController : ControllerBase
             nameOverridden = p.NameOverridden,
             categoryNameOverridden = p.CategoryNameOverridden,
             image = p.ImageBase64 != null ? "/api/products/" + p.Id + "/image" : null,
-            description = p.Description,
+            descriptionRu = p.DescriptionRu,
+            descriptionUz = p.DescriptionUz,
             images = p.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + p.Id + "/images/" + i.Id }),
-            specifications = p.Specifications.OrderBy(s => s.Order).Select(s => new { key = s.Key, value = s.Value }),
+            specifications = p.Specifications.OrderBy(s => s.Order).Select(s => new { keyRu = s.KeyRu, keyUz = s.KeyUz, valueRu = s.ValueRu, valueUz = s.ValueUz }),
             updatedAt = p.UpdatedAt
         });
     }
@@ -316,9 +317,10 @@ public class ProductsController : ControllerBase
             odooOriginalCategoryName = product.OdooOriginalCategoryName,
             approvalStatus = product.ApprovalStatus,
             image = product.ImageBase64 != null ? "/api/products/" + product.Id + "/image" : null,
-            description = product.Description,
+            descriptionRu = product.DescriptionRu,
+            descriptionUz = product.DescriptionUz,
             images = product.Images.OrderBy(i => i.Order).Select(i => new { id = i.Id, url = "/api/products/" + product.Id + "/images/" + i.Id }),
-            specifications = product.Specifications.OrderBy(s => s.Order).Select(s => new { key = s.Key, value = s.Value }),
+            specifications = product.Specifications.OrderBy(s => s.Order).Select(s => new { keyRu = s.KeyRu, keyUz = s.KeyUz, valueRu = s.ValueRu, valueUz = s.ValueUz }),
             updatedAt = product.UpdatedAt
         });
     }
@@ -367,10 +369,11 @@ public class ProductsController : ControllerBase
         var product = await _db.Products.FindAsync(id);
         if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
-        product.Description = dto.Description;
+        product.DescriptionRu = dto.DescriptionRu;
+        product.DescriptionUz = dto.DescriptionUz;
         await _db.SaveChangesAsync();
 
-        return Ok(new { description = product.Description });
+        return Ok(new { descriptionRu = product.DescriptionRu, descriptionUz = product.DescriptionUz });
     }
 
     // Nomi — Odoo'dan sinxronlanadi, lekin admin qo'lda to'g'irlashi mumkin
@@ -468,14 +471,16 @@ public class ProductsController : ControllerBase
         _db.ProductSpecifications.RemoveRange(product.Specifications);
         product.Specifications = specifications.Select((s, index) => new ProductSpecification
         {
-            Key = s.Key,
-            Value = s.Value,
+            KeyRu = s.KeyRu,
+            KeyUz = s.KeyUz,
+            ValueRu = s.ValueRu,
+            ValueUz = s.ValueUz,
             Order = index
         }).ToList();
 
         await _db.SaveChangesAsync();
 
-        return Ok(product.Specifications.Select(s => new { key = s.Key, value = s.Value }));
+        return Ok(product.Specifications.Select(s => new { keyRu = s.KeyRu, keyUz = s.KeyUz, valueRu = s.ValueRu, valueUz = s.ValueUz }));
     }
 
     // Galereya rasmi — asosiy rasmdan (POST /{id}/image) tashqari qo'shimcha
