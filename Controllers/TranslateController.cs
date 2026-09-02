@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace AuthApi.Controllers;
 
-// Admin panel uchun — rus tilidagi matnni Gemini orqali o'zbekchaga TAKLIF
+// Admin panel uchun — matnni Gemini orqali RU<->UZ (ikkala yo'nalishda) TAKLIF
 // sifatida tarjima qiladi (Categories, mahsulot tavsifi/xususiyatlari kabi
 // istalgan RU/UZ formada ishlatilishi mumkin). Admin har doim ko'rib chiqib,
 // xohlasa tuzatib saqlaydi — bu yerda hech narsa avtomatik yozilmaydi.
@@ -28,7 +28,13 @@ public class TranslateController : ControllerBase
             return BadRequest(new { message = "Matn bo'sh bo'lishi mumkin emas." });
         }
 
-        var suggestion = await _translation.SuggestUzTranslationAsync(dto.Text);
+        var targetLang = string.IsNullOrWhiteSpace(dto.TargetLang) ? "uz" : dto.TargetLang.Trim().ToLowerInvariant();
+        if (targetLang != "ru" && targetLang != "uz")
+        {
+            return BadRequest(new { message = "targetLang faqat \"ru\" yoki \"uz\" bo'lishi mumkin." });
+        }
+
+        var suggestion = await _translation.SuggestTranslationAsync(dto.Text, targetLang);
         if (suggestion == null)
         {
             return StatusCode(StatusCodes.Status503ServiceUnavailable,
@@ -42,4 +48,8 @@ public class TranslateController : ControllerBase
 public class SuggestTranslationDto
 {
     public string Text { get; set; } = string.Empty;
+
+    // "ru" yoki "uz" — qaysi tilga tarjima qilinsin. Berilmasa "uz" (eski
+    // xatti-harakat bilan moslik uchun zaxira qiymat).
+    public string? TargetLang { get; set; }
 }

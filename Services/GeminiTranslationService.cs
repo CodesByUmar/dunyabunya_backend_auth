@@ -3,11 +3,11 @@ using System.Text.Json;
 namespace AuthApi.Services;
 
 /// <summary>
-/// Rus tilidagi matnni (kategoriya nomi, mahsulot tavsifi, xususiyat va h.k.)
-/// Gemini API orqali o'zbek tiliga TAKLIF sifatida tarjima qiladi — admin buni
-/// ko'rib, xohlasa tuzatib, keyin saqlaydi (avtomatik, ko'rib chiqmasdan
-/// nashr qilinmaydi). Xato/limit tugashi so'rovni bloklamasligi kerak — har doim
-/// yumshoq (null) qaytadi, chaqiruvchi taklifsiz davom eta oladi.
+/// Matnni (kategoriya nomi, mahsulot tavsifi, xususiyat va h.k.) Gemini API orqali
+/// TAKLIF sifatida tarjima qiladi — RU->UZ yoki UZ->RU, chaqiruvchi belgilagan
+/// yo'nalishda. Admin buni ko'rib, xohlasa tuzatib, keyin saqlaydi (avtomatik,
+/// ko'rib chiqmasdan nashr qilinmaydi). Xato/limit tugashi so'rovni bloklamasligi
+/// kerak — har doim yumshoq (null) qaytadi, chaqiruvchi taklifsiz davom eta oladi.
 ///
 /// MUHIM: "gemini-3.6-flash" kabi eng yangi "thinking" modellar qisqa
 /// tarjima so'rovlarida ba'zan bo'sh javob qaytaradi (fikrlash tokenlariga
@@ -29,9 +29,16 @@ public class GeminiTranslationService : ITranslationService
         _logger = logger;
     }
 
-    public async Task<string?> SuggestUzTranslationAsync(string ruText)
+    public async Task<string?> SuggestTranslationAsync(string text, string targetLang)
     {
-        if (string.IsNullOrWhiteSpace(ruText)) return null;
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        var normalizedTarget = targetLang.Trim().ToLowerInvariant();
+        if (normalizedTarget != "ru" && normalizedTarget != "uz")
+        {
+            _logger.LogWarning("Noto'g'ri targetLang: {TargetLang} — faqat 'ru' yoki 'uz' bo'lishi mumkin.", targetLang);
+            return null;
+        }
 
         var apiKey = _config["Gemini:ApiKey"];
         if (string.IsNullOrEmpty(apiKey))
@@ -42,11 +49,13 @@ public class GeminiTranslationService : ITranslationService
 
         try
         {
+            var targetLangName = normalizedTarget == "uz" ? "o'zbek tiliga (lotin yozuvida)" : "rus tiliga";
+
             var prompt =
                 "Siz qurilish-ta'mirlash mollari onlayn-do'koni uchun professional tarjimonsiz. " +
-                "Quyidagi rus tilidagi matnni o'zbek tiliga (lotin yozuvida) tarjima qiling. " +
+                $"Quyidagi matnni {targetLangName} tarjima qiling (manba tili rus yoki o'zbek bo'lishi mumkin — o'zingiz aniqlang). " +
                 "Faqat tarjima natijasini yozing — hech qanday izoh, tirnoq belgisi yoki qo'shimcha so'z qo'shmang.\n\n" +
-                $"Rus tilidagi matn: {ruText}";
+                $"Matn: {text}";
 
             var payload = new
             {
@@ -67,14 +76,14 @@ public class GeminiTranslationService : ITranslationService
             await using var stream = await response.Content.ReadAsStreamAsync();
             using var doc = await JsonDocument.ParseAsync(stream);
 
-            var text = doc.RootElement
+            var resultText = doc.RootElement
                 .GetProperty("candidates")[0]
                 .GetProperty("content")
                 .GetProperty("parts")[0]
                 .GetProperty("text")
                 .GetString();
 
-            return text?.Trim().Trim('"');
+            return resultText?.Trim().Trim('"');
         }
         catch (Exception ex)
         {
