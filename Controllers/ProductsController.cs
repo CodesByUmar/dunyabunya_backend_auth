@@ -188,17 +188,37 @@ public class ProductsController : ControllerBase
             .ToListAsync();
         var categoriesBySlug = categories.ToDictionary(c => c.Slug);
 
+        // O'zbekcha nomlar Translations jadvalidan ("data.subcategories.{slug}") —
+        // CategoriesController'dagi bilan bir xil manba, ikkalasi sinxron turadi.
+        var allSlugs = categories.SelectMany(c => c.Subcategories).Select(s => s.Slug).ToList();
+        var uzByKey = await GetUzSubcategoryTranslationsAsync(allSlugs);
+
         var result = CategoryDisplayToOdoo.Select(kv =>
         {
             var categorySlug = OdooToCategorySlug[kv.Value];
             var subcategories = categoriesBySlug.TryGetValue(categorySlug, out var cat)
-                ? cat.Subcategories.OrderBy(s => s.Order).Select(s => s.NameRu).ToList()
-                : new List<string>();
+                ? cat.Subcategories.OrderBy(s => s.Order).Select(s => new
+                {
+                    slug = s.Slug,
+                    nameRu = s.NameRu,
+                    nameUz = uzByKey.GetValueOrDefault($"data.subcategories.{s.Slug}", s.NameRu)
+                }).ToList()
+                : new();
 
             return new { category = kv.Key, subcategories };
         });
 
         return Ok(result);
+    }
+
+    private async Task<Dictionary<string, string>> GetUzSubcategoryTranslationsAsync(List<string> slugs)
+    {
+        if (slugs.Count == 0) return new Dictionary<string, string>();
+
+        var keys = slugs.Select(s => $"data.subcategories.{s}").ToList();
+        return await _db.Translations
+            .Where(t => t.App == "user" && keys.Contains(t.Key))
+            .ToDictionaryAsync(t => t.Key, t => t.Uz);
     }
 
     // Odoo'dan yangi kelgan, admin hali tasdiqlamagan mahsulotlar ro'yxati —
@@ -391,11 +411,14 @@ public class ProductsController : ControllerBase
             // Categories/Subcategories jadvalidagi (mijoz katalogda ko'radigan,
             // kurator qilingan) nomlardan biri bo'lishi kerak (GET /category-options
             // shu ro'yxatni beradi — 2026-08-30dan buyon Odoo emas, shu jadvaldan).
+            // Frontend ham slug ("avr"), ham ko'rsatiladigan nom ("AVR") yuborishi
+            // mumkin — ikkalasi ham qabul qilinadi, katta-kichik harfga sezgir emas.
             var categorySlug = OdooToCategorySlug[odooCategory];
+            var candidate = dto.Subcategory.Trim().ToLower();
             var subcategoryRow = await _db.Subcategories
                 .Include(s => s.Category)
                 .Where(s => s.Category.Slug == categorySlug)
-                .FirstOrDefaultAsync(s => s.NameRu == dto.Subcategory);
+                .FirstOrDefaultAsync(s => s.NameRu.ToLower() == candidate || s.Slug.ToLower() == candidate);
 
             if (subcategoryRow == null)
             {
@@ -414,7 +437,10 @@ public class ProductsController : ControllerBase
 
             // "Hammasi / {OdooCategory} / {Subcategory}" — frontend faqat birinchi va
             // oxirgi bo'lakni o'qiydi, o'rtadagi bo'lak muhim emas (q. ParseCategoryPath).
-            product.CategoryName = $"Hammasi / {odooCategory} / {dto.Subcategory}";
+            // Leaf matn har doim kanonik (kurator) nom — dto.Subcategory slug
+            // shaklida yuborilgan bo'lsa ham, ko'rsatiladigan joylarda (masalan
+            // admin GET'dagi categorySubcategory) doim o'qiladigan nom chiqishi uchun.
+            product.CategoryName = $"Hammasi / {odooCategory} / {subcategoryRow.NameRu}";
             product.CategoryNameOverridden = true;
             product.SubcategorySlug = subcategoryRow.Slug;
         }
