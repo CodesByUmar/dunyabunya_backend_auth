@@ -150,11 +150,14 @@ public class ProductSyncBackgroundService : BackgroundService
                 // CategoryNameOverridden), Odoo'dan kelgan qiymat bu maydonlarga
                 // endi tegmaydi — admin tahriri doim ustun.
                 if (!product.NameOverridden) product.Name = dto.Name;
+                // Asl Odoo qiymati — admin tahriridan MUSTAQIL, har doim yangilanadi.
+                product.OdooOriginalName = dto.Name;
                 product.DefaultCode = dto.DefaultCode;
                 product.Barcode = dto.Barcode;
                 product.Price = dto.Price;
                 product.Cost = dto.Cost;
                 if (!product.CategoryNameOverridden) product.CategoryName = dto.CategoryName;
+                product.OdooOriginalCategoryName = dto.CategoryName;
                 product.Brand = dto.Brand;
                 product.InStock = dto.InStock;
                 // ImageBase64'ga TEGILMAYDI — rasmni Odoo emas, admin panel (Superuser)
@@ -175,6 +178,8 @@ public class ProductSyncBackgroundService : BackgroundService
                     Price = dto.Price,
                     Cost = dto.Cost,
                     CategoryName = dto.CategoryName,
+                    OdooOriginalName = dto.Name,
+                    OdooOriginalCategoryName = dto.CategoryName,
                     Brand = dto.Brand,
                     InStock = dto.InStock,
                     ApprovalStatus = "pending"

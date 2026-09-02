@@ -33,6 +33,13 @@ public class Product
     public bool NameOverridden { get; set; }
     public bool CategoryNameOverridden { get; set; }
 
+    // Odoo'dagi ASL (admin tahriridan mustaqil) Nom/Kategoriya — sync har safar
+    // bularni Odoo'dan kelgan qiymat bilan yangilab turadi, NameOverridden/
+    // CategoryNameOverridden'ga qaramasdan. Admin Name/CategoryName'ni tahrirlasa,
+    // asl Odoo qiymati shu yerda "orqa fonda" saqlanib qoladi — yo'qolib ketmaydi.
+    public string? OdooOriginalName { get; set; }
+    public string? OdooOriginalCategoryName { get; set; }
+
     // Admin PATCH /details orqali tanlagan subkategoriyaning Subcategories
     // jadvalidagi (mijoz katalogda ko'radigan, kurator qilingan) Slug'i —
     // CategoryName'dagi Odoo'ning xom oxirgi bo'lagidan farqli o'laroq, bu

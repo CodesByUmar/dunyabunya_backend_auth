@@ -610,6 +610,12 @@ namespace AuthApi.Migrations
                     b.Property<bool>("NameOverridden")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("OdooOriginalCategoryName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OdooOriginalName")
+                        .HasColumnType("text");
+
                     b.Property<int>("OdooProductId")
                         .HasColumnType("integer");
 

@@ -310,6 +310,10 @@ public class ProductsController : ControllerBase
             reviewCount = product.ReviewCount,
             nameOverridden = product.NameOverridden,
             categoryNameOverridden = product.CategoryNameOverridden,
+            // Odoo'dagi asl qiymatlar — admin tahriri bo'lsa ham, "orqa fonda"
+            // hech qachon yo'qolmaydi (ProductSyncBackgroundService har doim yangilaydi).
+            odooOriginalName = product.OdooOriginalName,
+            odooOriginalCategoryName = product.OdooOriginalCategoryName,
             approvalStatus = product.ApprovalStatus,
             image = product.ImageBase64 != null ? "/api/products/" + product.Id + "/image" : null,
             description = product.Description,
