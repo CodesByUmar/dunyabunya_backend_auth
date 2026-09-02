@@ -7,9 +7,10 @@ namespace AuthApi.Services;
 /// <summary>
 /// Odoo'dagi is_published=true mahsulotlarni davriy ravishda tortib, o'z bazamizga
 /// (Products) ko'chirib qo'yadi — frontend Odoo'ga jonli murojaat qilmasdan, tez
-/// javob olishi uchun. Har safar to'liq ro'yxat bilan solishtiriladi: yangi
-/// mahsulotlar qo'shiladi, o'zgarganlari yangilanadi, endi publish qilinmaganlari
-/// o'chiriladi.
+/// javob olishi uchun. Yangi mahsulotlar "pending" holatida qo'shiladi, mavjudlari
+/// yangilanadi (narx/ombor/nom — admin tahrir qilmagan bo'lsa). ApprovalStatus'ga
+/// (Pending -> Production) bu servis HECH QACHON tegmaydi — bu faqat admin qarori,
+/// Odoo'dan mustaqil (q. SyncAsync ichidagi izoh).
 /// </summary>
 public class ProductSyncBackgroundService : BackgroundService
 {
@@ -33,16 +34,6 @@ public class ProductSyncBackgroundService : BackgroundService
     private int _lastKnownGoodCount = -1;
     private int _consecutiveSuspiciousDrops;
     private const int MaxConsecutiveSkips = 3;
-
-    // Odoo'ning "is_published=true" so'rovi (search_read) vaqti-vaqti bilan, aniqlanmagan
-    // sababga ko'ra, allaqachon nashr etilgan bitta-ikkita mahsulotni natijadan TASODIFIY
-    // tashlab qoldirishi kuzatildi (326 tadan atigi 1-2 tasi — "ommaviy pasayish" himoyasi
-    // buni ilg'amaydi, chunki u faqat 50%+ pasayishni tekshiradi). Bunga ishonib, mahsulotni
-    // darhol "pending"ga o'tkazib yuborsak — admin tasdiqlagan mahsulot bir necha daqiqada
-    // o'zi-o'zidan qaytib ketaverardi. Shuning uchun bitta mahsulot Odoo ro'yxatida KETMA-KET
-    // bir necha marta yo'q bo'lgandagina (tasodifiy emasligi aniqlangach) "pending"ga o'tkaziladi.
-    private readonly Dictionary<int, int> _missingStreak = new();
-    private const int MinConsecutiveMissesToHide = 3;
 
     public ProductSyncBackgroundService(IServiceProvider services, IConfiguration config, ILogger<ProductSyncBackgroundService> logger)
     {
@@ -83,7 +74,6 @@ public class ProductSyncBackgroundService : BackgroundService
         var odooProducts = scope.ServiceProvider.GetRequiredService<IOdooProductService>();
 
         var fresh = await odooProducts.GetPublishedProductsAsync();
-        var freshIds = fresh.Select(p => p.OdooProductId).ToHashSet();
 
         var existing = await db.Products.ToListAsync(ct);
 
@@ -188,49 +178,19 @@ public class ProductSyncBackgroundService : BackgroundService
             }
         }
 
-        // Odoo'da is_published=false qilinsa (masalan omborda vaqtincha tugab, admin
-        // vaqtincha o'chirib qo'ysa) — MAHSULOT O'CHIRILMAYDI, faqat qayta "pending"ga
-        // o'tkaziladi (sayt katalogidan yashiriladi). Aks holda tavsif/rasm-galereya/
-        // xususiyatlar/sharhlar har safar yo'qolib, qaytadan yoqilganda hammasi
-        // yo'qotilgan bo'lardi. Admin qaytadan is_published qilsa, mahsulot "existing"
-        // sifatida topilib, o'z holicha (pending) qoladi — qayta tasdiqlash kifoya.
-        //
-        // Lekin buni Odoo'dan bir martalik (ehtimol vaqtinchalik) yo'qligiga qarab
-        // darhol qilmaymiz — ketma-ket MinConsecutiveMissesToHide marta yo'q bo'lsagina.
-        var toHide = new List<Product>();
-        foreach (var p in existing)
-        {
-            if (freshIds.Contains(p.OdooProductId))
-            {
-                _missingStreak.Remove(p.OdooProductId);
-                continue;
-            }
-
-            if (p.ApprovalStatus == "pending") continue;
-
-            var streak = _missingStreak.GetValueOrDefault(p.OdooProductId) + 1;
-            _missingStreak[p.OdooProductId] = streak;
-
-            if (streak >= MinConsecutiveMissesToHide)
-            {
-                toHide.Add(p);
-                _missingStreak.Remove(p.OdooProductId);
-            }
-            else
-            {
-                _logger.LogInformation(
-                    "Product sync: OdooProductId={OdooProductId} Odoo ro'yxatida yo'q ({Streak}/{Max} marta ketma-ket) — hali \"pending\"ga o'tkazilmadi, ehtimol vaqtinchalik.",
-                    p.OdooProductId, streak, MinConsecutiveMissesToHide);
-            }
-        }
-
-        foreach (var p in toHide) p.ApprovalStatus = "pending";
-
+        // MUHIM (arxitektura qarori): Odoo faqat Pending bilan bog'liq — is_published
+        // yangi mahsulotni "pending" qilib qo'shadi, xolos. Pending -> Production
+        // o'tishi FAQAT admin qarori, va bir marta "approved" bo'lgan mahsulot endi
+        // Odoo'ning is_published holatiga (yoki Odoo ro'yxatida umuman bor-yo'qligiga)
+        // qarab AVTOMATIK qayta "pending"ga O'TKAZILMAYDI — Production Odoo'dan
+        // mustaqil. Odoo'da is_published=false qilinsa, mahsulot shunchaki keyingi
+        // sinxronizatsiyalarda yangilanmay qoladi (narx/ombor holati muzlaydi),
+        // lekin ApprovalStatus'ga hech qachon avtomatik tegilmaydi.
         await db.SaveChangesAsync(ct);
         _lastKnownGoodCount = fresh.Count;
 
         _logger.LogInformation(
-            "Product sync: {Fresh} ta Odoo'dan olindi ({Added} yangi, {Updated} yangilandi, {Hidden} qayta pending qilindi).",
-            fresh.Count, added, updated, toHide.Count);
+            "Product sync: {Fresh} ta Odoo'dan olindi ({Added} yangi, {Updated} yangilandi).",
+            fresh.Count, added, updated);
     }
 }
