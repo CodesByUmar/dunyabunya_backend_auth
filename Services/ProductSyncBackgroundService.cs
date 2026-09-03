@@ -15,8 +15,17 @@ namespace AuthApi.Services;
 public class ProductSyncBackgroundService : BackgroundService
 {
     private readonly IServiceProvider _services;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ProductSyncBackgroundService> _logger;
     private readonly TimeSpan _interval;
+
+    // healthchecks.io'ga sinxronizatsiya HAQIQATDA ishlayotganini bildiradigan
+    // alohida signal — umumiy "dastur tirikmi" heartbeat'dan (HeartbeatBackgroundService)
+    // FARQLI: agar Odoo bilan bog'lanish uzilsa (masalan API kalit yaroqsiz bo'lib
+    // qolsa), dastur o'zi tinch ishlashda davom etadi, lekin bu signal kelmay qoladi —
+    // shu orqali muammo soatlar/kunlar emas, daqiqalarda payqaladi. Bo'sh bo'lsa,
+    // sokin o'chirilgan (hozircha URL yo'q, foydalanuvchi keyinroq qo'shadi).
+    private readonly string? _odooSyncPingUrl;
 
     // Oxirgi muvaffaqiyatli sinxronizatsiyada nechta qator bo'lgani — DbContext'dan
     // MUSTAQIL, xotirada saqlanadi. Supabase connection pooling bilan bog'liq
@@ -35,12 +44,14 @@ public class ProductSyncBackgroundService : BackgroundService
     private int _consecutiveSuspiciousDrops;
     private const int MaxConsecutiveSkips = 3;
 
-    public ProductSyncBackgroundService(IServiceProvider services, IConfiguration config, ILogger<ProductSyncBackgroundService> logger)
+    public ProductSyncBackgroundService(IServiceProvider services, IHttpClientFactory httpClientFactory, IConfiguration config, ILogger<ProductSyncBackgroundService> logger)
     {
         _services = services;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
         var minutes = double.TryParse(config["Product:SyncIntervalMinutes"], out var m) ? m : 15;
         _interval = TimeSpan.FromMinutes(minutes);
+        _odooSyncPingUrl = config["Healthchecks:OdooSyncPingUrl"];
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -50,10 +61,12 @@ public class ProductSyncBackgroundService : BackgroundService
             try
             {
                 await SyncAsync(stoppingToken);
+                await PingHealthcheckAsync(success: true);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Product sync'da kutilmagan xato.");
+                await PingHealthcheckAsync(success: false);
             }
 
             try
@@ -64,6 +77,27 @@ public class ProductSyncBackgroundService : BackgroundService
             {
                 // Ilova to'xtayotganda normal holat.
             }
+        }
+    }
+
+    // healthchecks.io konvensiyasi: oddiy GET — muvaffaqiyat, "/fail" bilan GET —
+    // xatolik (darhol ogohlantiradi, keyingi "grace period"ni kutmasdan). Ping
+    // o'zi muvaffaqiyatsiz bo'lsa ham (internet yo'q va h.k.) sinxronizatsiyaning
+    // o'ziga hech qanday ta'sir qilmaydi — shunchaki jim o'tkazib yuboriladi.
+    private async Task PingHealthcheckAsync(bool success)
+    {
+        if (string.IsNullOrWhiteSpace(_odooSyncPingUrl)) return;
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(10);
+            var url = success ? _odooSyncPingUrl : $"{_odooSyncPingUrl.TrimEnd('/')}/fail";
+            await client.GetAsync(url);
+        }
+        catch
+        {
+            // Sokin o'tkazib yuboriladi — heartbeat servisidagi bilan bir xil naqsh.
         }
     }
 
