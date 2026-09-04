@@ -27,6 +27,18 @@ public class ProductSyncBackgroundService : BackgroundService
     // sokin o'chirilgan (hozircha URL yo'q, foydalanuvchi keyinroq qo'shadi).
     private readonly string? _odooSyncPingUrl;
 
+    // MUHIM: Supabase'ga ulanishda vaqti-vaqti bilan (butun loyiha davomida
+    // kuzatilgan) bir martalik, o'z-o'zidan keyingi siklda tuzaladigan uzilishlar
+    // bo'lib turadi — bular haqiqiy Odoo muammosi emas. Agar HAR bitta shunday
+    // blipda ham "/fail" yuborilsa, foydalanuvchiga daqiqada bir marta soxta
+    // ogohlantirish keladi (sinab ko'rilgan, shovqin qildi). Shuning uchun faqat
+    // MinConsecutiveFailuresToAlert marta KETMA-KET muvaffaqiyatsiz bo'lgandagina
+    // "/fail" yuboriladi — bitta tasodifiy blip jim o'tkaziladi, lekin haqiqiy,
+    // davom etadigan uzilish (masalan Odoo API kaliti yaroqsiz bo'lib qolgani kabi)
+    // baribir bir necha daqiqada aniqlanadi.
+    private int _consecutiveHealthcheckFailures;
+    private const int MinConsecutiveFailuresToAlert = 3;
+
     // Oxirgi muvaffaqiyatli sinxronizatsiyada nechta qator bo'lgani — DbContext'dan
     // MUSTAQIL, xotirada saqlanadi. Supabase connection pooling bilan bog'liq
     // (aniqlanmagan) sabablarga ko'ra ba'zan bir xil so'rov ikki marta ketma-ket
@@ -61,12 +73,17 @@ public class ProductSyncBackgroundService : BackgroundService
             try
             {
                 await SyncAsync(stoppingToken);
+                _consecutiveHealthcheckFailures = 0;
                 await PingHealthcheckAsync(success: true);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Product sync'da kutilmagan xato.");
-                await PingHealthcheckAsync(success: false);
+                _consecutiveHealthcheckFailures++;
+                if (_consecutiveHealthcheckFailures >= MinConsecutiveFailuresToAlert)
+                {
+                    await PingHealthcheckAsync(success: false);
+                }
             }
 
             try
