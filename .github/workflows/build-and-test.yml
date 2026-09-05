@@ -1,0 +1,30 @@
+name: Build and test
+
+# Faqat build+test — deploy'ga tegmaydi. Deploy hali ham qo'lda
+# (stop service -> dotnet publish -> start service) qilinadi.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore AuthApi.slnx
+
+      - name: Build
+        run: dotnet build AuthApi.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test AuthApi.slnx --configuration Release --no-build

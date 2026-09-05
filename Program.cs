@@ -9,6 +9,18 @@ using AuthApi.Services;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// MUHIM: server appsettings.Development.json'dan sirlarni yuklash uchun OS darajasida
+// ASPNETCORE_ENVIRONMENT=Development bilan ishga tushiriladi (CreateBuilder shu tufayli
+// yuqoridagi qatorda o'sha faylni ham o'qiydi — bu qoladi, o'zgarmaydi). Lekin buning
+// nojo'ya ta'siri bor edi: ASP.NET Core "Development" muhitida DeveloperExceptionPage'ni
+// avtomatik yoqadi — har qanday kutilmagan xato HTTP javobida to'liq stack trace/SQL/fayl
+// yo'llarini chaqiruvchiga qaytarib yuborardi (bu productionda jiddiy ma'lumot oshkor
+// bo'lish xavfsizlik kamchiligi). Konfiguratsiya allaqachon yuqorida yuklab bo'lingani
+// uchun, endi muhit nomini "Production"ga almashtiramiz — Build() buni ko'rib,
+// DeveloperExceptionPage'ni endi qo'shmaydi, pastdagi UseExceptionHandler ishlaydi.
+builder.Environment.EnvironmentName = Environments.Production;
+
 builder.Host.UseWindowsService();
 
 // --- Services ---
@@ -85,6 +97,16 @@ if (builder.Configuration.GetValue("Product:SyncEnabled", true))
 // DbContext (PostgreSQL)
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Katta JSON javoblarni (masalan 300+ mahsulotli ro'yxat) siqib yuborish uchun —
+// tarmoq trafigini kamaytiradi. EnableForHttps=true kerak, chunki API HTTPS orqali
+// (nginx demo.dunyabunya.uz) ishlatiladi va bu yerda faqat JSON qaytariladi (BREACH
+// hujumi odatda foydalanuvchi kiritgan matn HTML ichida qaytarilganda xavfli bo'ladi,
+// bu yerga tegishli emas).
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+});
 
 // Controllers va Swagger
 builder.Services.AddControllers();
@@ -231,6 +253,30 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 
 // --- Middleware pipeline (tartib muhim!) ---
+
+// Global exception handler — endi DeveloperExceptionPage yo'q (yuqoridagi Environment
+// tuzatishi tufayli), shuning uchun kutilmagan xatoni o'zimiz ushlab, mavjud
+// "{ message = ... }" konvensiyasiga mos toza JSON qaytaramiz. Texnik tafsilot
+// (stack trace) faqat serverning o'z logiga (Event Log) yoziladi, chaqiruvchiga emas.
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        var feature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+        if (feature?.Error is { } ex)
+        {
+            app.Logger.LogError(ex, "Kutilmagan server xatosi: {Path}", context.Request.Path);
+        }
+
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        await context.Response.WriteAsJsonAsync(new
+        {
+            message = "Serverda kutilmagan xatolik yuz berdi. Iltimos, birozdan so'ng qayta urinib ko'ring."
+        });
+    });
+});
+
 // Swagger sozlama orqali boshqariladi (ASPNETCORE_ENVIRONMENT emas — bu server
 // sirlarni appsettings.Development.json'dan oladi, shuning uchun Development
 // muhitida qolishi shart). appsettings.json'da o'chirilgan (xavfsizlik/yuklama
@@ -243,6 +289,8 @@ if (swaggerEnabled)
 }
 
 app.UseHttpsRedirection();
+
+app.UseResponseCompression();
 
 app.UseCors(CorsPolicyName); // CORS UseAuthentication'dan oldin bo'lishi kerak
 
