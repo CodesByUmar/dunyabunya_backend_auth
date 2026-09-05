@@ -55,6 +55,16 @@ public class Product
     // yo'qolmaydi. "approved" | "pending" | "rejected".
     public string ApprovalStatus { get; set; } = "approved";
 
+    // Mahsulot HOZIR Odoo'da is_published=true ro'yxatida bormi — ApprovalStatus'dan
+    // MUSTAQIL. Admin tasdig'i (ApprovalStatus) doim saqlanib qoladi, bu maydon esa
+    // faqat KO'RINISHNI boshqaradi: ochiq katalog (GET /api/products) endi ikkalasi
+    // ham true bo'lgandagina mahsulotni ko'rsatadi. Admin Odoo'da is_published'ni
+    // o'chirsa — mahsulot saytdan darhol yashiriladi (qayta tasdiqlash TALAB
+    // QILINMAYDI); qaytadan yoqsa — o'zi qaytadan ko'rinadi. Yangi mahsulot
+    // qo'shilganda doim true (chunki u aynan shu sabab — is_published=true — bilan
+    // topilgan).
+    public bool IsPublishedInOdoo { get; set; } = true;
+
     // Sharxlardan avtomatik hisoblanadi (ReviewsController) — frontend to'g'ridan-to'g'ri
     // o'zgartira olmaydi, faqat sharh qo'shilganda/o'chirilganda server yangilaydi.
     public double Rating { get; set; }

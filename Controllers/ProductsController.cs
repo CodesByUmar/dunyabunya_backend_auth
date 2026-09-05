@@ -77,7 +77,7 @@ public class ProductsController : ControllerBase
         page = Math.Max(page, 1);
         limit = Math.Clamp(limit, 1, 200);
 
-        var query = _db.Products.Where(p => p.ApprovalStatus == "approved").OrderBy(p => p.Id);
+        var query = _db.Products.Where(p => p.ApprovalStatus == "approved" && p.IsPublishedInOdoo).OrderBy(p => p.Id);
         var total = await query.CountAsync();
         var raw = await query
             .Skip((page - 1) * limit)
@@ -134,7 +134,7 @@ public class ProductsController : ControllerBase
         var p = await _db.Products
             .Include(p => p.Images)
             .Include(p => p.Specifications)
-            .FirstOrDefaultAsync(p => p.Id == id && p.ApprovalStatus == "approved");
+            .FirstOrDefaultAsync(p => p.Id == id && p.ApprovalStatus == "approved" && p.IsPublishedInOdoo);
 
         if (p == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
@@ -242,6 +242,7 @@ public class ProductsController : ControllerBase
                 p.SubcategorySlug,
                 p.Brand,
                 p.InStock,
+                p.IsPublishedInOdoo,
                 HasImage = p.ImageBase64 != null,
                 p.CreatedAt
             })
@@ -259,6 +260,10 @@ public class ProductsController : ControllerBase
             subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
+            // Odoo'da endi is_published=false bo'lib qolgan bo'lsa — admin buni
+            // tasdiqlay olmaydi (SetApprovalStatus shu yerda bloklaydi). Frontend
+            // buni "arxiv"/nofaol qilib ko'rsatishi uchun.
+            isPublishedInOdoo = p.IsPublishedInOdoo,
             image = p.HasImage ? "/api/products/" + p.Id + "/image" : null,
             createdAt = p.CreatedAt
         });
@@ -316,6 +321,9 @@ public class ProductsController : ControllerBase
             odooOriginalName = product.OdooOriginalName,
             odooOriginalCategoryName = product.OdooOriginalCategoryName,
             approvalStatus = product.ApprovalStatus,
+            // "approved" bo'lsa ham, agar Odoo'da is_published o'chirilgan bo'lsa,
+            // mahsulot hozir ochiq katalogda ko'RINMAYDI — admin buni shu yerdan bilib olsin.
+            isPublishedInOdoo = product.IsPublishedInOdoo,
             image = product.ImageBase64 != null ? "/api/products/" + product.Id + "/image" : null,
             descriptionRu = product.DescriptionRu,
             descriptionUz = product.DescriptionUz,
@@ -353,6 +361,14 @@ public class ProductsController : ControllerBase
 
         var product = await _db.Products.FindAsync(id);
         if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
+
+        // Odoo'da is_published=false bo'lib qolgan mahsulotni tasdiqlab (production'ga
+        // chiqarib) bo'lmaydi — chunki u hozir Odoo'ning o'zida "nashr etilmagan".
+        // Rad etish (rejected) esa doim mumkin.
+        if (dto.Status == "approved" && !product.IsPublishedInOdoo)
+        {
+            return BadRequest(new { message = "Bu mahsulot hozir Odoo'da nashr etilmagan (is_published=false) — tasdiqlab bo'lmaydi." });
+        }
 
         product.ApprovalStatus = dto.Status;
         await _db.SaveChangesAsync();

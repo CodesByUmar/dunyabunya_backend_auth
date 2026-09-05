@@ -606,6 +606,9 @@ namespace AuthApi.Migrations
                     b.Property<bool>("InStock")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsPublishedInOdoo")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
