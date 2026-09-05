@@ -16,6 +16,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ProductSyncBackgroundService.SyncAsync kabi internal metodlarni testlardan
+         to'g'ridan-to'g'ri chaqirish uchun (ExecuteAsync'ning cheksiz siklisiz). -->
+    <InternalsVisibleTo Include="AuthApi.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
     <PackageReference Include="DnsClient" Version="1.8.0" />
     <PackageReference Include="Google.Apis.Auth" Version="1.75.0" />

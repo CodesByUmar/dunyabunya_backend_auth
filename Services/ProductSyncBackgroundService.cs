@@ -135,7 +135,10 @@ public class ProductSyncBackgroundService : BackgroundService
         }
     }
 
-    private async Task SyncAsync(CancellationToken ct)
+    // internal (private emas) — AuthApi.Tests'dan to'g'ridan-to'g'ri chaqirib,
+    // yangi/mavjud farqi va IsPublishedInOdoo debounce mantig'ini ExecuteAsync'ning
+    // cheksiz sikli/Task.Delay'isiz sinash uchun (q. AuthApi.csproj'dagi InternalsVisibleTo).
+    internal async Task SyncAsync(CancellationToken ct)
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
