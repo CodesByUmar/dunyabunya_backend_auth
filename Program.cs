@@ -29,6 +29,11 @@ builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<IPhoneNormalizerService, PhoneNormalizerService>();
 builder.Services.AddScoped<IEmailDomainValidatorService, EmailDomainValidatorService>();
 
+// ProductsController'dagi Odoo<->mijoz kategoriya nomlarini moslashtirish/
+// validatsiya mantig'i (ilgari controller ichida edi, ProductsController'ni
+// yengillashtirish uchun chiqarilgan — q. Services/ProductCategoryService.cs).
+builder.Services.AddScoped<IProductCategoryService, ProductCategoryService>();
+
 // Odoo JSON-RPC orqali chaqiriladi — BaseUrl/Timeout appsettings'dagi "Odoo" bo'limidan.
 builder.Services.AddHttpClient<IOdooService, OdooService>((sp, client) =>
 {

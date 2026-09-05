@@ -1,5 +1,6 @@
 using AuthApi.Controllers;
 using AuthApi.Models;
+using AuthApi.Services;
 using AuthApi.Tests.Helpers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -59,7 +60,7 @@ public class ProductsControllerTests
     public async Task UpdateProductDetails_CategoryAndSubcategory_ReconstructsCategoryNameAndSetsSlug()
     {
         using var test = await SeedAsync(MakeProduct());
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.UpdateProductDetails(1, new UpdateProductDetailsDto
         {
@@ -82,7 +83,7 @@ public class ProductsControllerTests
         // Bug (2026-09-05'gacha): Category yuborilmasa, bu blok umuman ishga
         // tushmas edi va Subcategory e'tiborsiz qoldirilardi.
         using var test = await SeedAsync(MakeProduct(categoryName: "Hammasi / Muhandislik tizimlari / Eski"));
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.UpdateProductDetails(1, new UpdateProductDetailsDto
         {
@@ -99,7 +100,7 @@ public class ProductsControllerTests
     public async Task UpdateProductDetails_SubcategoryOnly_WithoutExistingValidCategory_ReturnsBadRequest()
     {
         using var test = await SeedAsync(MakeProduct(categoryName: null));
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.UpdateProductDetails(1, new UpdateProductDetailsDto
         {
@@ -115,7 +116,7 @@ public class ProductsControllerTests
     public async Task UpdateProductDetails_UnknownCategory_ReturnsBadRequest()
     {
         using var test = await SeedAsync(MakeProduct());
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.UpdateProductDetails(1, new UpdateProductDetailsDto
         {
@@ -130,7 +131,7 @@ public class ProductsControllerTests
     public async Task UpdateProductDetails_UnknownSubcategoryForValidCategory_ReturnsBadRequest()
     {
         using var test = await SeedAsync(MakeProduct());
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.UpdateProductDetails(1, new UpdateProductDetailsDto
         {
@@ -147,7 +148,7 @@ public class ProductsControllerTests
     public async Task UpdateProductDetails_EmptySubcategory_ReturnsBadRequest()
     {
         using var test = await SeedAsync(MakeProduct());
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.UpdateProductDetails(1, new UpdateProductDetailsDto
         {
@@ -162,7 +163,7 @@ public class ProductsControllerTests
     public async Task UpdateProductDetails_NameOnly_DoesNotTouchCategory()
     {
         using var test = await SeedAsync(MakeProduct(categoryName: "Hammasi / Muhandislik tizimlari / Eski"));
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.UpdateProductDetails(1, new UpdateProductDetailsDto { Name = "Yangi nom" });
 
@@ -177,7 +178,7 @@ public class ProductsControllerTests
     public async Task UpdateProductDetails_ProductNotFound_ReturnsNotFound()
     {
         using var test = await SeedAsync(MakeProduct());
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.UpdateProductDetails(999, new UpdateProductDetailsDto { Name = "X" });
 
@@ -192,7 +193,7 @@ public class ProductsControllerTests
         var product = MakeProduct();
         product.IsPublishedInOdoo = false;
         using var test = await SeedAsync(product);
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.SetApprovalStatus(1, new ProductApprovalDto { Status = "approved" });
 
@@ -206,7 +207,7 @@ public class ProductsControllerTests
         var product = MakeProduct();
         product.IsPublishedInOdoo = true;
         using var test = await SeedAsync(product);
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.SetApprovalStatus(1, new ProductApprovalDto { Status = "approved" });
 
@@ -221,7 +222,7 @@ public class ProductsControllerTests
         var product = MakeProduct();
         product.IsPublishedInOdoo = false;
         using var test = await SeedAsync(product);
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.SetApprovalStatus(1, new ProductApprovalDto { Status = "rejected" });
 
@@ -233,7 +234,7 @@ public class ProductsControllerTests
     public async Task SetApprovalStatus_InvalidStatus_ReturnsBadRequest()
     {
         using var test = await SeedAsync(MakeProduct());
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.SetApprovalStatus(1, new ProductApprovalDto { Status = "unknown" });
 
@@ -244,7 +245,7 @@ public class ProductsControllerTests
     public async Task SetApprovalStatus_ProductNotFound_ReturnsNotFound()
     {
         using var test = await SeedAsync(MakeProduct());
-        var controller = new ProductsController(test.Context);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
         var result = await controller.SetApprovalStatus(999, new ProductApprovalDto { Status = "approved" });
 

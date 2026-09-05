@@ -1,6 +1,7 @@
 using AuthApi.Data;
 using AuthApi.Filters;
 using AuthApi.Models;
+using AuthApi.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,51 +25,13 @@ public class ProductsController : ControllerBase
     private const long MaxImageBytes = 5 * 1024 * 1024; // 5 MB
     private const int MaxGalleryImages = 8;
 
-    // Kalit — admin ko'radigan va tanlaydigan nom (Categories jadvalidagi NameUz
-    // bilan BIR XIL, mijoz saytda ko'radigan nom). Qiymat — Odoo'ning o'zidagi
-    // (ichki) original nom, faqat CategoryName yo'lini qayta tuzishda ishlatiladi
-    // va frontenddagi CATEGORY_SLUG_MAP (src/lib/api.ts) kalitlariga mos kelishi
-    // SHART — aks holda mahsulot katalog filtrida "kategoriyasiz" bo'lib qoladi.
-    // Bu yerda o'zgartirilsa, frontenddagi map bilan albatta sinxronlab turilishi kerak.
-    private static readonly Dictionary<string, string> CategoryDisplayToOdoo = new()
-    {
-        ["Elektr"] = "Elektrika",
-        ["Santexnika"] = "Muhandislik tizimlari",
-        ["Qurilish materiallari"] = "Qurilish mahsulotlari",
-        ["Bezak materiallari"] = "Yakuniy qoplamalar",
-        ["Mahkamlash"] = "Mahkamlagichlar",
-        ["Asboblar"] = "Instrumentlar"
-    };
-
-    // Odoo'ning ichki nomidan (CategoryName yo'lining birinchi bo'lagi) to'g'ridan-to'g'ri
-    // /api/categories jadvalidagi Slug'ga o'tadigan xarita — frontend BUNI ishlatishi kerak,
-    // matn/nom moslashtirish (fragile) o'rniga. Har bir mahsulot javobida tayyor
-    // "categorySlug" maydoni sifatida beriladi (pastda, GetCategorySlug orqali).
-    private static readonly Dictionary<string, string> OdooToCategorySlug = new()
-    {
-        ["Elektrika"] = "elektrika",
-        ["Muhandislik tizimlari"] = "santekhnika",
-        ["Qurilish mahsulotlari"] = "stroitelnye-materialy",
-        ["Yakuniy qoplamalar"] = "otdelochnye-materialy",
-        ["Mahkamlagichlar"] = "krypyozh",
-        ["Instrumentlar"] = "instrumenty"
-    };
-
-    // Mahsulotning CategoryName'idan ("Hammasi / Muhandislik tizimlari / Adapter")
-    // to'g'ridan-to'g'ri, ISHONCHLI slug ("santekhnika") ni hisoblaydi — bu slug
-    // GET /api/categories'dagi Slug bilan AYNAN bir xil, frontend hech qanday nom
-    // moslashtirish/taxmin qilmasdan to'g'ridan-to'g'ri solishtira oladi.
-    private static string? GetCategorySlug(string? categoryName)
-    {
-        var (top, _) = ParseCategoryPath(categoryName);
-        return top != null && OdooToCategorySlug.TryGetValue(top, out var slug) ? slug : null;
-    }
-
     private readonly AppDbContext _db;
+    private readonly IProductCategoryService _categoryService;
 
-    public ProductsController(AppDbContext db)
+    public ProductsController(AppDbContext db, IProductCategoryService categoryService)
     {
         _db = db;
+        _categoryService = categoryService;
     }
 
     [HttpGet]
@@ -115,7 +78,7 @@ public class ProductsController : ControllerBase
             barcode = p.Barcode,
             price = p.Price,
             category = p.CategoryName,
-            categorySlug = GetCategorySlug(p.CategoryName),
+            categorySlug = _categoryService.GetCategorySlug(p.CategoryName),
             subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
@@ -176,7 +139,7 @@ public class ProductsController : ControllerBase
             barcode = p.Barcode,
             price = p.Price,
             category = p.CategoryName,
-            categorySlug = GetCategorySlug(p.CategoryName),
+            categorySlug = _categoryService.GetCategorySlug(p.CategoryName),
             subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
@@ -213,7 +176,7 @@ public class ProductsController : ControllerBase
             barcode = p.Barcode,
             price = p.Price,
             category = p.CategoryName,
-            categorySlug = GetCategorySlug(p.CategoryName),
+            categorySlug = _categoryService.GetCategorySlug(p.CategoryName),
             subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
@@ -248,43 +211,7 @@ public class ProductsController : ControllerBase
     [HttpGet("category-options")]
     public async Task<IActionResult> GetCategoryOptions()
     {
-        var categories = await _db.Categories
-            .Include(c => c.Subcategories)
-            .Where(c => OdooToCategorySlug.Values.Contains(c.Slug))
-            .ToListAsync();
-        var categoriesBySlug = categories.ToDictionary(c => c.Slug);
-
-        // O'zbekcha nomlar Translations jadvalidan ("data.subcategories.{slug}") —
-        // CategoriesController'dagi bilan bir xil manba, ikkalasi sinxron turadi.
-        var allSlugs = categories.SelectMany(c => c.Subcategories).Select(s => s.Slug).ToList();
-        var uzByKey = await GetUzSubcategoryTranslationsAsync(allSlugs);
-
-        var result = CategoryDisplayToOdoo.Select(kv =>
-        {
-            var categorySlug = OdooToCategorySlug[kv.Value];
-            var subcategories = categoriesBySlug.TryGetValue(categorySlug, out var cat)
-                ? cat.Subcategories.OrderBy(s => s.Order).Select(s => new
-                {
-                    slug = s.Slug,
-                    nameRu = s.NameRu,
-                    nameUz = uzByKey.GetValueOrDefault($"data.subcategories.{s.Slug}", s.NameRu)
-                }).ToList()
-                : new();
-
-            return new { category = kv.Key, subcategories };
-        });
-
-        return Ok(result);
-    }
-
-    private async Task<Dictionary<string, string>> GetUzSubcategoryTranslationsAsync(List<string> slugs)
-    {
-        if (slugs.Count == 0) return new Dictionary<string, string>();
-
-        var keys = slugs.Select(s => $"data.subcategories.{s}").ToList();
-        return await _db.Translations
-            .Where(t => t.App == "user" && keys.Contains(t.Key))
-            .ToDictionaryAsync(t => t.Key, t => t.Uz);
+        return Ok(await _categoryService.GetCategoryOptionsAsync());
     }
 
     // Odoo'dan yangi kelgan, admin hali tasdiqlamagan mahsulotlar ro'yxati —
@@ -321,7 +248,7 @@ public class ProductsController : ControllerBase
             defaultCode = p.DefaultCode,
             price = p.Price,
             category = p.CategoryName,
-            categorySlug = GetCategorySlug(p.CategoryName),
+            categorySlug = _categoryService.GetCategorySlug(p.CategoryName),
             subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
@@ -351,12 +278,10 @@ public class ProductsController : ControllerBase
 
         if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
-        var (odooCategoryTop, categoryLeaf) = ParseCategoryPath(product.CategoryName);
+        var (odooCategoryTop, categoryLeaf) = _categoryService.ParseCategoryPath(product.CategoryName);
         // Odoo'ning ichki nomini ("Muhandislik tizimlari") mijoz ko'radigan nomga
         // ("Santexnika") o'giramiz — admin category-options'dagi bilan bir xilini ko'radi.
-        var categoryTop = odooCategoryTop != null
-            ? CategoryDisplayToOdoo.FirstOrDefault(kv => kv.Value == odooCategoryTop).Key
-            : null;
+        var categoryTop = _categoryService.ToDisplayCategory(odooCategoryTop);
 
         return Ok(new
         {
@@ -368,7 +293,7 @@ public class ProductsController : ControllerBase
             barcode = product.Barcode,
             price = product.Price,
             category = product.CategoryName,
-            categorySlug = GetCategorySlug(product.CategoryName),
+            categorySlug = _categoryService.GetCategorySlug(product.CategoryName),
             subcategorySlug = product.SubcategorySlug,
             // Admin edit formasi uchun tayyor bo'laklab berilgan qiymatlar —
             // frontend qayta parse qilishi shart emas (category-options
@@ -396,21 +321,6 @@ public class ProductsController : ControllerBase
             specifications = product.Specifications.OrderBy(s => s.Order).Select(s => new { keyRu = s.KeyRu, keyUz = s.KeyUz, valueRu = s.ValueRu, valueUz = s.ValueUz }),
             updatedAt = product.UpdatedAt
         });
-    }
-
-    // "Hammasi / Elektrika / Past kuchlanishli uskunalar / AVR" -> ("Elektrika", "AVR").
-    // Frontend'ning src/lib/api.ts:mapBackendCategoryPath bilan bir xil mantiq —
-    // birinchi (Hammasi'dan keyingi) bo'lak "kategoriya", oxirgi bo'lak "subkategoriya".
-    private static (string? Top, string? Leaf) ParseCategoryPath(string? categoryName)
-    {
-        if (string.IsNullOrWhiteSpace(categoryName)) return (null, null);
-
-        var segments = categoryName.Split('/', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-            .Where(s => s != "Hammasi")
-            .ToList();
-
-        if (segments.Count == 0) return (null, null);
-        return (segments[0], segments[^1]);
     }
 
     // Admin yangi mahsulotni tasdiqlaydi (ochiq katalogda ko'rinadi) yoki rad etadi
@@ -487,73 +397,19 @@ public class ProductsController : ControllerBase
         // umuman yubormasa) — Subkategoriya ham butunlay e'tiborsiz qoldirilar
         // edi (mahsulot "Ichki kategoriyasiz"da qolib ketardi). Endi
         // dto.Subcategory yolg'iz kelsa ham, mahsulotning HOZIRGI kategoriyasi
-        // asos qilib olinadi.
+        // asos qilib olinadi — validatsiya/moslashtirish mantig'i endi
+        // IProductCategoryService'da (q. Services/ProductCategoryService.cs).
         if (dto.Category != null || dto.Subcategory != null)
         {
-            string odooCategory;
-
-            if (dto.Category != null)
+            var resolution = await _categoryService.ResolveCategoryChangeAsync(product.CategoryName, dto.Category, dto.Subcategory);
+            if (!resolution.Success)
             {
-                // dto.Category — mijoz ko'radigan nom (masalan "Santexnika"). Odoo'ning
-                // ichki nomiga ("Muhandislik tizimlari") shu orqali o'giriladi.
-                if (!CategoryDisplayToOdoo.TryGetValue(dto.Category, out var mappedCategory))
-                {
-                    return BadRequest(new { message = $"Kategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", CategoryDisplayToOdoo.Keys)}" });
-                }
-                odooCategory = mappedCategory;
-            }
-            else
-            {
-                var (currentTop, _) = ParseCategoryPath(product.CategoryName);
-                if (currentTop == null || !OdooToCategorySlug.ContainsKey(currentTop))
-                {
-                    return BadRequest(new { message = "Subkategoriyani belgilashdan oldin avval Kategoriyani tanlang." });
-                }
-                odooCategory = currentTop;
+                return BadRequest(new { message = resolution.ErrorMessage });
             }
 
-            if (string.IsNullOrWhiteSpace(dto.Subcategory))
-            {
-                return BadRequest(new { message = "Subkategoriya bo'sh bo'lishi mumkin emas." });
-            }
-
-            // Subkategoriya ham erkin matn EMAS — faqat shu Kategoriya ostida
-            // Categories/Subcategories jadvalidagi (mijoz katalogda ko'radigan,
-            // kurator qilingan) nomlardan biri bo'lishi kerak (GET /category-options
-            // shu ro'yxatni beradi — 2026-08-30dan buyon Odoo emas, shu jadvaldan).
-            // Frontend ham slug ("avr"), ham ko'rsatiladigan nom ("AVR") yuborishi
-            // mumkin — ikkalasi ham qabul qilinadi, katta-kichik harfga sezgir emas.
-            var categorySlug = OdooToCategorySlug[odooCategory];
-            var candidate = dto.Subcategory.Trim().ToLower();
-            var subcategoryRow = await _db.Subcategories
-                .Include(s => s.Category)
-                .Where(s => s.Category.Slug == categorySlug)
-                .FirstOrDefaultAsync(s => s.NameRu.ToLower() == candidate || s.Slug.ToLower() == candidate);
-
-            if (subcategoryRow == null)
-            {
-                var known = await _db.Subcategories
-                    .Where(s => s.Category.Slug == categorySlug)
-                    .Select(s => s.NameRu)
-                    .ToListAsync();
-
-                var displayCategory = dto.Category ?? CategoryDisplayToOdoo.FirstOrDefault(kv => kv.Value == odooCategory).Key;
-                return BadRequest(new
-                {
-                    message = known.Count > 0
-                        ? $"\"{displayCategory}\" kategoriyasi uchun subkategoriya faqat shulardan biri bo'lishi kerak: {string.Join(", ", known)}"
-                        : $"\"{displayCategory}\" kategoriyasi uchun hali hech qanday ma'lum subkategoriya yo'q."
-                });
-            }
-
-            // "Hammasi / {OdooCategory} / {Subcategory}" — frontend faqat birinchi va
-            // oxirgi bo'lakni o'qiydi, o'rtadagi bo'lak muhim emas (q. ParseCategoryPath).
-            // Leaf matn har doim kanonik (kurator) nom — dto.Subcategory slug
-            // shaklida yuborilgan bo'lsa ham, ko'rsatiladigan joylarda (masalan
-            // admin GET'dagi categorySubcategory) doim o'qiladigan nom chiqishi uchun.
-            product.CategoryName = $"Hammasi / {odooCategory} / {subcategoryRow.NameRu}";
+            product.CategoryName = resolution.CategoryName;
             product.CategoryNameOverridden = true;
-            product.SubcategorySlug = subcategoryRow.Slug;
+            product.SubcategorySlug = resolution.SubcategorySlug;
         }
 
         await _db.SaveChangesAsync();
