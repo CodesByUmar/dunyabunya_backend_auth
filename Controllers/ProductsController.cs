@@ -128,6 +128,71 @@ public class ProductsController : ControllerBase
         return Ok(new { items, page, total });
     }
 
+    // Admin panel uchun — GetProducts'ning aynan o'zi, faqat IsPublishedInOdoo
+    // bo'yicha filtrlanmaydi (admin "Kategoriyalar" daraxti buni ishlatadi —
+    // Odoo'da vaqtincha yashirilgan, lekin baribir "approved" mahsulotni ham
+    // ko'rsatishi kerak, faqat belgilab — masalan chizib — ko'rsatish uchun,
+    // ochiq mijoz katalogidan farqli o'laroq mutlaqo yo'q qilib yubormasdan).
+    [RequireSection("products")]
+    [HttpGet("admin-list")]
+    public async Task<IActionResult> GetProductsForAdminList([FromQuery] int page = 1, [FromQuery] int limit = 50)
+    {
+        page = Math.Max(page, 1);
+        limit = Math.Clamp(limit, 1, 200);
+
+        var query = _db.Products.Where(p => p.ApprovalStatus == "approved").OrderBy(p => p.Id);
+        var total = await query.CountAsync();
+        var raw = await query
+            .Skip((page - 1) * limit)
+            .Take(limit)
+            .Select(p => new
+            {
+                p.Id,
+                p.OdooProductId,
+                p.OdooTemplateId,
+                p.Name,
+                p.DefaultCode,
+                p.Barcode,
+                p.Price,
+                p.CategoryName,
+                p.SubcategorySlug,
+                p.Brand,
+                p.InStock,
+                p.Rating,
+                p.ReviewCount,
+                p.IsPublishedInOdoo,
+                HasImage = p.ImageBase64 != null,
+                p.UpdatedAt
+            })
+            .ToListAsync();
+
+        var items = raw.Select(p => new
+        {
+            id = p.Id,
+            odooProductId = p.OdooProductId,
+            odooTemplateId = p.OdooTemplateId,
+            name = p.Name,
+            defaultCode = p.DefaultCode,
+            barcode = p.Barcode,
+            price = p.Price,
+            category = p.CategoryName,
+            categorySlug = GetCategorySlug(p.CategoryName),
+            subcategorySlug = p.SubcategorySlug,
+            brand = p.Brand,
+            inStock = p.InStock,
+            rating = p.Rating,
+            reviewCount = p.ReviewCount,
+            // false bo'lsa — mahsulot hozir ochiq (mijoz) katalogda ko'rinmayapti
+            // (Odoo'da is_published=false), lekin "approved" holati saqlanib
+            // qolgan — frontend buni chizib (strikethrough) ko'rsatishi kerak.
+            isPublishedInOdoo = p.IsPublishedInOdoo,
+            image = p.HasImage ? "/api/products/" + p.Id + "/image" : null,
+            updatedAt = p.UpdatedAt
+        });
+
+        return Ok(new { items, page, total });
+    }
+
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetProduct(int id)
     {
