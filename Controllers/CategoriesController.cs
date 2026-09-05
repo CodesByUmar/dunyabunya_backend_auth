@@ -4,6 +4,7 @@ using AuthApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace AuthApi.Controllers;
 
@@ -14,6 +15,15 @@ public class CategoriesController : ControllerBase
 {
     private const long MaxImageBytes = 5 * 1024 * 1024; // 5 MB
 
+    // Kategoriyalar+subkategoriyalar+tarjimalar ro'yxati kam o'zgaradi (faqat admin
+    // tahriri), lekin har bir katalog sahifasi yuklanganda o'qiladi — shuning uchun
+    // keshlanadi. Bu controller (rasm/nom o'zgarishlari) VA TranslationsController
+    // (data.categories.*/data.subcategories.* kalitlarini to'g'ridan-to'g'ri tahrir
+    // qilsa) ikkalasi ham yozishda shu kalitni bekor qiladi — aks holda tarjima
+    // to'g'ridan-to'g'ri o'zgartirilganda 5 daqiqagacha eski matn ko'rinib qolardi.
+    public const string CategoriesCacheKey = "categories:all";
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
+
     // Rasm fayllari bazaga emas, diskka saqlanadi (mahsulotlardan farqli) —
     // bazada faqat "/api/categories/.../image" yo'li turadi. Fayl nomi
     // kengaytmasiz (masalan "category_5") — qayta yuklaganda eski format
@@ -22,14 +32,18 @@ public class CategoriesController : ControllerBase
     private static readonly string UploadsRoot = Path.Combine(AppContext.BaseDirectory, "uploads", "categories");
 
     private readonly AppDbContext _db;
+    private readonly IMemoryCache _cache;
 
-    public CategoriesController(AppDbContext db)
+    public CategoriesController(AppDbContext db, IMemoryCache cache)
     {
         _db = db;
+        _cache = cache;
     }
 
-    [HttpGet]
-    public async Task<IActionResult> GetCategories()
+    private record SubcategoryView(int Id, string NameRu, string NameUz, string Slug, string? Image, int Order);
+    private record CategoryView(int Id, string NameRu, string NameUz, string Slug, string? Image, int Order, List<SubcategoryView> Subcategories);
+
+    private async Task<List<CategoryView>> LoadCategoriesAsync()
     {
         var categories = await _db.Categories
             .OrderBy(c => c.Order)
@@ -57,76 +71,44 @@ public class CategoriesController : ControllerBase
             .ToList();
         var uzByKey = await GetUzTranslationsAsync(keys);
 
-        var result = categories.Select(c => new
-        {
+        return categories.Select(c => new CategoryView(
             c.Id,
             c.NameRu,
-            NameUz = uzByKey.GetValueOrDefault($"data.categories.{c.Slug}", c.NameRu),
+            uzByKey.GetValueOrDefault($"data.categories.{c.Slug}", c.NameRu),
             c.Slug,
             c.Image,
             c.Order,
-            Subcategories = c.Subcategories.Select(s => new
-            {
+            c.Subcategories.Select(s => new SubcategoryView(
                 s.Id,
                 s.NameRu,
-                NameUz = uzByKey.GetValueOrDefault($"data.subcategories.{s.Slug}", s.NameRu),
+                uzByKey.GetValueOrDefault($"data.subcategories.{s.Slug}", s.NameRu),
                 s.Slug,
                 s.Image,
                 s.Order
-            })
-        });
+            )).ToList()
+        )).ToList();
+    }
 
-        return Ok(result);
+    private Task<List<CategoryView>> GetCachedCategoriesAsync() =>
+        _cache.GetOrCreateAsync(CategoriesCacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = CacheDuration;
+            return await LoadCategoriesAsync();
+        })!;
+
+    [HttpGet]
+    public async Task<IActionResult> GetCategories()
+    {
+        return Ok(await GetCachedCategoriesAsync());
     }
 
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetCategory(int id)
     {
-        var category = await _db.Categories
-            .Where(c => c.Id == id)
-            .Select(c => new
-            {
-                c.Id,
-                c.NameRu,
-                c.Slug,
-                c.Image,
-                c.Order,
-                Subcategories = c.Subcategories.OrderBy(s => s.Order).Select(s => new
-                {
-                    s.Id,
-                    s.NameRu,
-                    s.Slug,
-                    s.Image,
-                    s.Order
-                }).ToList()
-            })
-            .FirstOrDefaultAsync();
-
+        var category = (await GetCachedCategoriesAsync()).FirstOrDefault(c => c.Id == id);
         if (category == null) return NotFound(new { message = "Kategoriya topilmadi." });
 
-        var keys = new List<string> { $"data.categories.{category.Slug}" }
-            .Concat(category.Subcategories.Select(s => $"data.subcategories.{s.Slug}"))
-            .ToList();
-        var uzByKey = await GetUzTranslationsAsync(keys);
-
-        return Ok(new
-        {
-            category.Id,
-            category.NameRu,
-            NameUz = uzByKey.GetValueOrDefault($"data.categories.{category.Slug}", category.NameRu),
-            category.Slug,
-            category.Image,
-            category.Order,
-            Subcategories = category.Subcategories.Select(s => new
-            {
-                s.Id,
-                s.NameRu,
-                NameUz = uzByKey.GetValueOrDefault($"data.subcategories.{s.Slug}", s.NameRu),
-                s.Slug,
-                s.Image,
-                s.Order
-            })
-        });
+        return Ok(category);
     }
 
     [Authorize(Roles = "Admin")]
@@ -169,6 +151,7 @@ public class CategoriesController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        _cache.Remove(CategoriesCacheKey);
 
         return Ok(new { category.Id });
     }
@@ -229,6 +212,7 @@ public class CategoriesController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        _cache.Remove(CategoriesCacheKey);
         return Ok(new { message = "Yangilandi." });
     }
 
@@ -241,6 +225,7 @@ public class CategoriesController : ControllerBase
 
         _db.Categories.Remove(category);
         await _db.SaveChangesAsync();
+        _cache.Remove(CategoriesCacheKey);
         return Ok(new { message = "O'chirildi." });
     }
 
@@ -271,6 +256,7 @@ public class CategoriesController : ControllerBase
 
         category.Image = $"/api/categories/{id}/image";
         await _db.SaveChangesAsync();
+        _cache.Remove(CategoriesCacheKey);
 
         return Ok(new { url = category.Image });
     }
@@ -285,6 +271,7 @@ public class CategoriesController : ControllerBase
         DeleteFileIfExists(CategoryImagePath(id));
         category.Image = null;
         await _db.SaveChangesAsync();
+        _cache.Remove(CategoriesCacheKey);
 
         return Ok(new { message = "Rasm o'chirildi." });
     }
@@ -316,6 +303,7 @@ public class CategoriesController : ControllerBase
 
         subcategory.Image = $"/api/categories/{categoryId}/subcategories/{subId}/image";
         await _db.SaveChangesAsync();
+        _cache.Remove(CategoriesCacheKey);
 
         return Ok(new { url = subcategory.Image });
     }
@@ -330,6 +318,7 @@ public class CategoriesController : ControllerBase
         DeleteFileIfExists(SubcategoryImagePath(subId));
         subcategory.Image = null;
         await _db.SaveChangesAsync();
+        _cache.Remove(CategoriesCacheKey);
 
         return Ok(new { message = "Rasm o'chirildi." });
     }

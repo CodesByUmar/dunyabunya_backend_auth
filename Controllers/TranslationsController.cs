@@ -3,6 +3,7 @@ using AuthApi.Filters;
 using AuthApi.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Npgsql;
 
 namespace AuthApi.Controllers;
@@ -15,7 +16,20 @@ namespace AuthApi.Controllers;
 public class TranslationsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public TranslationsController(AppDbContext db) => _db = db;
+    private readonly IMemoryCache _cache;
+    public TranslationsController(AppDbContext db, IMemoryCache cache)
+    {
+        _db = db;
+        _cache = cache;
+    }
+
+    // CategoriesController "data.categories.{slug}"/"data.subcategories.{slug}"
+    // kalitlarini o'z keshida saqlaydi — bu yerdan to'g'ridan-to'g'ri (kategoriya
+    // tahrirlash formasidan emas, "Tarjimalar" sahifasidan) o'zgartirilsa ham,
+    // kesh eskirib qolmasligi uchun bekor qilamiz.
+    private static bool IsCategoryRelated(string key) =>
+        key.StartsWith("data.categories.", StringComparison.Ordinal) ||
+        key.StartsWith("data.subcategories.", StringComparison.Ordinal);
 
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] string? app)
@@ -67,6 +81,8 @@ public class TranslationsController : ControllerBase
             return BadRequest(new { message = "Bu app+key juftligi allaqachon mavjud." });
         }
 
+        if (IsCategoryRelated(entity.Key)) _cache.Remove(CategoriesController.CategoriesCacheKey);
+
         return Ok(entity);
     }
 
@@ -82,6 +98,7 @@ public class TranslationsController : ControllerBase
         entity.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+        if (IsCategoryRelated(entity.Key)) _cache.Remove(CategoriesController.CategoriesCacheKey);
         return Ok(entity);
     }
 
@@ -94,6 +111,7 @@ public class TranslationsController : ControllerBase
 
         _db.Translations.Remove(entity);
         await _db.SaveChangesAsync();
+        if (IsCategoryRelated(entity.Key)) _cache.Remove(CategoriesController.CategoriesCacheKey);
 
         return Ok(new { message = "O'chirildi." });
     }

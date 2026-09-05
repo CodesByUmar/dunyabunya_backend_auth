@@ -98,6 +98,11 @@ if (builder.Configuration.GetValue("Product:SyncEnabled", true))
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Categories/Subcategories + tarjimalarini keshlash uchun (CategoriesController) —
+// bu ro'yxat kam o'zgaradi (faqat admin tahriri), lekin har bir katalog sahifasi
+// yuklanganda o'qiladi, shuning uchun kesh bazaga tushadigan yukni kamaytiradi.
+builder.Services.AddMemoryCache();
+
 // Katta JSON javoblarni (masalan 300+ mahsulotli ro'yxat) siqib yuborish uchun —
 // tarmoq trafigini kamaytiradi. EnableForHttps=true kerak, chunki API HTTPS orqali
 // (nginx demo.dunyabunya.uz) ishlatiladi va bu yerda faqat JSON qaytariladi (BREACH
