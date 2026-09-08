@@ -91,6 +91,23 @@ builder.Services.AddHttpClient<ITranslationService, GeminiTranslationService>(cl
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 
+// Mijoz chatbot widget'i uchun AI javob generatsiya qiladigan alohida FastAPI xizmati
+// (server-to-server, ICHKI tarmoq orqali — 192.168.89.x, tashqi internetga ochilmagan,
+// hech qanday nginx/firewall o'zgarish shart emas). ChatController.Ask shu orqali
+// so'rov yuborib, javobni "bot" xabari sifatida saqlaydi.
+builder.Services.AddHttpClient("ChatbotAi", (sp, client) =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var baseUrl = config["Chatbot:AiServiceUrl"];
+    if (!string.IsNullOrEmpty(baseUrl))
+    {
+        client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    }
+
+    var timeoutSeconds = double.TryParse(config["Chatbot:AiServiceTimeoutSeconds"], out var t) ? t : 30;
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
+
 // Product:SyncEnabled=false orqali vaqtincha o'chirish mumkin — masalan bazadan
 // takroriy noto'g'ri bo'sh natija qaytib, mahsulot ID'lari beqaror bo'lib qolsa,
 // sababi tekshirilayotgan vaqtda fon jarayonini to'xtatib turish uchun.

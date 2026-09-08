@@ -1,4 +1,6 @@
+using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Json.Serialization;
 using AuthApi.Data;
 using AuthApi.Filters;
 using AuthApi.Models;
@@ -9,17 +11,32 @@ namespace AuthApi.Controllers;
 
 // Ikki xil chaqiruvchi bor:
 // 1) Frontend (mijoz) — "ask"/"thread" orqali, kalitsiz (login shart emas),
-//    o'zi savol yozadi va javobni o'qiydi.
-// 2) AI chatbot xizmati — "messages" orqali, X-Api-Key bilan himoyalangan,
-//    savollarni o'qib javobni ("bot") shu yerga yozadi.
-// Ikkalasi ham bitta ChatMessages jadvaliga ulanadi — shu orqali AI xizmati
-// bilan frontend bir-birining API kontraktini bilishi shart emas.
+//    o'zi savol yozadi va javobni o'qiydi. "ask" endi ICHKI tarmoqdagi AI
+//    xizmatiga (FastAPI, "AI-chi" tomonidan yozilgan, 192.168.89.6:8003 —
+//    o'z-o'zicha Supabase'dan o'qib+OpenAI orqali javob tayyorlaydi) server-
+//    to-server so'rov yuborib, javobni darhol "bot" xabari sifatida shu
+//    yerga (ChatMessages) saqlaydi — frontend buni odatdagidek "thread"
+//    orqali (pastda) polling bilan ko'radi.
+// 2) "messages" — X-Api-Key bilan himoyalangan, boshqa/eski integratsiyalar
+//    uchun qoldirilgan (masalan AI xizmati o'zi to'g'ridan-to'g'ri yozmoqchi
+//    bo'lsa ham ishlaydi), lekin hozir asosiy oqim "ask" orqali.
 [ApiController]
 [Route("api/chat")]
 public class ChatController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public ChatController(AppDbContext db) => _db = db;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<ChatController> _logger;
+
+    public ChatController(AppDbContext db, IHttpClientFactory httpClientFactory, ILogger<ChatController> logger)
+    {
+        _db = db;
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
+    }
+
+    private record AiAskRequest([property: JsonPropertyName("conversationId")] string ConversationId, [property: JsonPropertyName("message")] string Message);
+    private record AiAskResponse([property: JsonPropertyName("conversationId")] string? ConversationId, [property: JsonPropertyName("answer")] string? Answer);
 
     // Mijoz savol yozadi. Sender/UserId mijozdan qabul qilinmaydi — server
     // o'zi belgilaydi (spoofing'ning oldini olish uchun).
@@ -46,6 +63,38 @@ public class ChatController : ControllerBase
 
         _db.ChatMessages.Add(message);
         await _db.SaveChangesAsync();
+
+        // AI javobini olib bo'lmasa ham (xizmat vaqtincha ishlamasa), foydalanuvchi
+        // xabari baribir saqlanib qoladi — bu yerdagi xato "ask"ning o'zini
+        // 500'ga chiqarmasligi kerak, shuning uchun alohida try/catch.
+        try
+        {
+            var client = _httpClientFactory.CreateClient("ChatbotAi");
+            var response = await client.PostAsJsonAsync("api/chatbot/ask", new AiAskRequest(dto.ConversationId, dto.Text));
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AiAskResponse>();
+                if (!string.IsNullOrWhiteSpace(result?.Answer))
+                {
+                    _db.ChatMessages.Add(new ChatMessage
+                    {
+                        ConversationId = dto.ConversationId,
+                        Sender = "bot",
+                        Text = result.Answer
+                    });
+                    await _db.SaveChangesAsync();
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Chatbot AI xizmati kutilmagan status qaytardi: {Status}", response.StatusCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Chatbot AI xizmatiga (ichki tarmoq) ulanib bo'lmadi.");
+        }
 
         return Ok(message);
     }
