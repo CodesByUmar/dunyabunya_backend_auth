@@ -51,6 +51,7 @@ public class ProductsController : ControllerBase
                 p.OdooProductId,
                 p.OdooTemplateId,
                 p.Name,
+                p.NameUz,
                 p.DefaultCode,
                 p.Barcode,
                 p.Price,
@@ -74,6 +75,7 @@ public class ProductsController : ControllerBase
             odooProductId = p.OdooProductId,
             odooTemplateId = p.OdooTemplateId,
             name = p.Name,
+            nameUz = p.NameUz,
             defaultCode = p.DefaultCode,
             barcode = p.Barcode,
             price = p.Price,
@@ -114,6 +116,7 @@ public class ProductsController : ControllerBase
                 p.OdooProductId,
                 p.OdooTemplateId,
                 p.Name,
+                p.NameUz,
                 p.DefaultCode,
                 p.Barcode,
                 p.Price,
@@ -135,6 +138,7 @@ public class ProductsController : ControllerBase
             odooProductId = p.OdooProductId,
             odooTemplateId = p.OdooTemplateId,
             name = p.Name,
+            nameUz = p.NameUz,
             defaultCode = p.DefaultCode,
             barcode = p.Barcode,
             price = p.Price,
@@ -172,6 +176,7 @@ public class ProductsController : ControllerBase
             odooProductId = p.OdooProductId,
             odooTemplateId = p.OdooTemplateId,
             name = p.Name,
+            nameUz = p.NameUz,
             defaultCode = p.DefaultCode,
             barcode = p.Barcode,
             price = p.Price,
@@ -228,6 +233,7 @@ public class ProductsController : ControllerBase
                 p.Id,
                 p.OdooProductId,
                 p.Name,
+                p.NameUz,
                 p.DefaultCode,
                 p.Price,
                 p.CategoryName,
@@ -245,6 +251,7 @@ public class ProductsController : ControllerBase
             id = p.Id,
             odooProductId = p.OdooProductId,
             name = p.Name,
+            nameUz = p.NameUz,
             defaultCode = p.DefaultCode,
             price = p.Price,
             category = p.CategoryName,
@@ -289,6 +296,7 @@ public class ProductsController : ControllerBase
             odooProductId = product.OdooProductId,
             odooTemplateId = product.OdooTemplateId,
             name = product.Name,
+            nameUz = product.NameUz,
             defaultCode = product.DefaultCode,
             barcode = product.Barcode,
             price = product.Price,
@@ -391,6 +399,17 @@ public class ProductsController : ControllerBase
             product.NameOverridden = true;
         }
 
+        // NameUz — Odoo'da bunday maydon yo'q, shuning uchun NameOverridden'ga
+        // ta'sir qilmaydi (ustidan yozib yuboradigan Odoo qiymati umuman yo'q).
+        if (dto.NameUz != null)
+        {
+            if (string.IsNullOrWhiteSpace(dto.NameUz))
+            {
+                return BadRequest(new { message = "O'zbekcha nomi bo'sh bo'lishi mumkin emas." });
+            }
+            product.NameUz = dto.NameUz;
+        }
+
         // MUHIM (tuzatildi): avval bu blok FAQAT dto.Category berilganda ishga
         // tushardi. Agar admin faqat Subkategoriyani o'zgartirsa (Kategoriya
         // allaqachon to'g'ri bo'lgani uchun frontend uni "o'zgarmagan" deb
@@ -414,7 +433,7 @@ public class ProductsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        return Ok(new { product.Id, product.Name, product.CategoryName });
+        return Ok(new { product.Id, product.Name, product.NameUz, product.CategoryName });
     }
 
     // Xususiyatlar jadvali (masalan "Akkumulyator" -> "18 V Li-Ion") — butun

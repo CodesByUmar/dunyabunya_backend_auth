@@ -15,6 +15,7 @@ public class UpdateProductDescriptionDto
 public class UpdateProductDetailsDto
 {
     public string? Name { get; set; }
+    public string? NameUz { get; set; }
     public string? Category { get; set; }
     public string? Subcategory { get; set; }
 }

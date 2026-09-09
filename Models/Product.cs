@@ -11,7 +11,16 @@ public class Product
     public int Id { get; set; }
     public int OdooProductId { get; set; }
     public int OdooTemplateId { get; set; }
+    // Odoo'dan keladigan asl nom (odatda rus tilida) — mijoz katalogida va
+    // admin ro'yxatlarida shu ishlatiladi. O'zbekcha nom uchun NameUz (pastda).
     public string Name { get; set; } = string.Empty;
+
+    // Nomning o'zbekcha varianti — Odoo'da bunday maydon yo'q, faqat admin panel
+    // orqali qo'lda kiritiladi (DescriptionRu/DescriptionUz bilan bir xil uslub —
+    // sync bu maydonga hech qachon tegmaydi, "overridden" bayrog'i kerak emas,
+    // chunki ustidan yozib yuborish uchun Odoo'dan kelgan qiymat umuman yo'q).
+    public string? NameUz { get; set; }
+
     public string? DefaultCode { get; set; }
     public string? Barcode { get; set; }
     public decimal Price { get; set; }
