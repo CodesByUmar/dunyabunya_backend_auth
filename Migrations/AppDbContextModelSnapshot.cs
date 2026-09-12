@@ -606,6 +606,9 @@ namespace AuthApi.Migrations
                     b.Property<bool>("InStock")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsOnline")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsPublishedInOdoo")
                         .HasColumnType("boolean");
 
@@ -649,6 +652,8 @@ namespace AuthApi.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ApprovalStatus");
+
+                    b.HasIndex("IsOnline");
 
                     b.HasIndex("OdooProductId")
                         .IsUnique();

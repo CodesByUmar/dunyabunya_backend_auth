@@ -10,9 +10,9 @@ using Xunit;
 
 namespace AuthApi.Tests.Services;
 
-// SyncAsync — Odoo/Pending/Production uchburchagining "Odoo <-> Pending" va
-// "Production <-> ko'rinish (IsPublishedInOdoo)" qismlarini tekshiradi
-// (2026-09-05'da qayta ishlangan arxitektura). ApprovalStatus'ga sync HECH
+// SyncAsync — Odoo/Offline-Online/ko'rinish uchburchagining "Odoo <-> Offline-Online"
+// va "Online <-> ko'rinish (IsPublishedInOdoo)" qismlarini tekshiradi (2026-09-12'da
+// ApprovalStatus'dan IsOnline'ga o'tkazilgan arxitektura). IsOnline'ga sync HECH
 // QACHON tegmasligi — bu yerdagi eng muhim invariant.
 public class ProductSyncBackgroundServiceTests
 {
@@ -51,7 +51,7 @@ public class ProductSyncBackgroundServiceTests
         new(odooProductId, OdooTemplateId: odooProductId * 10, name, DefaultCode: null, Barcode: null, price, Cost: price / 2, categoryName, Brand: null, InStock: true);
 
     [Fact]
-    public async Task SyncAsync_NewOdooProduct_IsAddedAsPendingAndPublished()
+    public async Task SyncAsync_NewOdooProduct_IsAddedAsOfflineAndPublished()
     {
         var (service, test, odoo) = CreateService();
         using var _ = test;
@@ -60,13 +60,13 @@ public class ProductSyncBackgroundServiceTests
         await service.SyncAsync(CancellationToken.None);
 
         var product = test.Context.Products.AsNoTracking().Single(p => p.OdooProductId == 100);
-        Assert.Equal("pending", product.ApprovalStatus);
+        Assert.False(product.IsOnline);
         Assert.True(product.IsPublishedInOdoo);
         Assert.Equal("Yangi mahsulot", product.Name);
     }
 
     [Fact]
-    public async Task SyncAsync_ExistingProduct_UpdatesPriceAndKeepsApprovalStatus()
+    public async Task SyncAsync_ExistingProduct_UpdatesPriceAndKeepsOnlineStatus()
     {
         var (service, test, odoo) = CreateService();
         using var _ = test;
@@ -75,7 +75,7 @@ public class ProductSyncBackgroundServiceTests
             OdooProductId = 100,
             Name = "Eski nom",
             Price = 500,
-            ApprovalStatus = "approved",
+            IsOnline = true,
             IsPublishedInOdoo = true
         });
         await test.Context.SaveChangesAsync();
@@ -86,7 +86,7 @@ public class ProductSyncBackgroundServiceTests
         var product = test.Context.Products.AsNoTracking().Single(p => p.OdooProductId == 100);
         Assert.Equal(750, product.Price);
         Assert.Equal("Yangilangan nom", product.Name);
-        Assert.Equal("approved", product.ApprovalStatus); // sync bunga tegmaydi
+        Assert.True(product.IsOnline); // sync bunga tegmaydi
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public class ProductSyncBackgroundServiceTests
             OdooProductId = 100,
             Name = "Admin tahriri",
             NameOverridden = true,
-            ApprovalStatus = "approved",
+            IsOnline = true,
             IsPublishedInOdoo = true
         });
         await test.Context.SaveChangesAsync();
@@ -117,7 +117,7 @@ public class ProductSyncBackgroundServiceTests
     {
         var (service, test, odoo) = CreateService();
         using var _ = test;
-        test.Context.Products.Add(new Product { OdooProductId = 100, Name = "X", ApprovalStatus = "approved", IsPublishedInOdoo = true });
+        test.Context.Products.Add(new Product { OdooProductId = 100, Name = "X", IsOnline = true, IsPublishedInOdoo = true });
         await test.Context.SaveChangesAsync();
 
         odoo.Products = []; // 1-marta yo'q
@@ -129,11 +129,11 @@ public class ProductSyncBackgroundServiceTests
     }
 
     [Fact]
-    public async Task SyncAsync_MissingThreeConsecutiveTimes_BecomesUnpublishedButKeepsApproval()
+    public async Task SyncAsync_MissingThreeConsecutiveTimes_BecomesUnpublishedButKeepsOnlineStatus()
     {
         var (service, test, odoo) = CreateService();
         using var _ = test;
-        test.Context.Products.Add(new Product { OdooProductId = 100, Name = "X", ApprovalStatus = "approved", IsPublishedInOdoo = true });
+        test.Context.Products.Add(new Product { OdooProductId = 100, Name = "X", IsOnline = true, IsPublishedInOdoo = true });
         await test.Context.SaveChangesAsync();
 
         odoo.Products = [];
@@ -143,7 +143,7 @@ public class ProductSyncBackgroundServiceTests
 
         var product = test.Context.Products.AsNoTracking().Single(p => p.OdooProductId == 100);
         Assert.False(product.IsPublishedInOdoo);
-        Assert.Equal("approved", product.ApprovalStatus); // tasdiq holati saqlanadi
+        Assert.True(product.IsOnline); // Online holati saqlanadi
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public class ProductSyncBackgroundServiceTests
     {
         var (service, test, odoo) = CreateService();
         using var _ = test;
-        test.Context.Products.Add(new Product { OdooProductId = 100, Name = "X", ApprovalStatus = "approved", IsPublishedInOdoo = true });
+        test.Context.Products.Add(new Product { OdooProductId = 100, Name = "X", IsOnline = true, IsPublishedInOdoo = true });
         await test.Context.SaveChangesAsync();
 
         odoo.Products = [];

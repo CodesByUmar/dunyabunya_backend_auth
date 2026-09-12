@@ -18,6 +18,12 @@ public class UpdateProductDetailsDto
     public string? NameUz { get; set; }
     public string? Category { get; set; }
     public string? Subcategory { get; set; }
+
+    // Tahrirlash oynasidagi Online/Offline dropdown'i — berilsa, boshqa
+    // maydonlar bilan bir vaqtda saqlanadi (alohida "Tasdiqlash" bosish
+    // shart emas). Odoo'da is_published=false bo'lsa "true" bilan
+    // yuborilsa BadRequest qaytadi (q. UpdateProductDetails).
+    public bool? IsOnline { get; set; }
 }
 
 public class ProductSpecificationDto
@@ -28,7 +34,9 @@ public class ProductSpecificationDto
     public string ValueUz { get; set; } = string.Empty;
 }
 
-public class ProductApprovalDto
+// Ro'yxatdagi tezkor Online/Offline tugmasi uchun (to'liq tahrirlash
+// oynasini ochmasdan) — q. ProductsController.SetOnlineStatus.
+public class UpdateOnlineStatusDto
 {
-    public string Status { get; set; } = string.Empty;
+    public bool IsOnline { get; set; }
 }

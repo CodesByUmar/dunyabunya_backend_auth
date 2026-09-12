@@ -40,7 +40,7 @@ public class ProductsController : ControllerBase
         page = Math.Max(page, 1);
         limit = Math.Clamp(limit, 1, 200);
 
-        var query = _db.Products.Where(p => p.ApprovalStatus == "approved" && p.IsPublishedInOdoo).OrderBy(p => p.Id);
+        var query = _db.Products.Where(p => p.IsOnline && p.IsPublishedInOdoo).OrderBy(p => p.Id);
         var total = await query.CountAsync();
         var raw = await query
             .Skip((page - 1) * limit)
@@ -93,11 +93,11 @@ public class ProductsController : ControllerBase
         return Ok(new { items, page, total });
     }
 
-    // Admin panel uchun — GetProducts'ning aynan o'zi, faqat IsPublishedInOdoo
-    // bo'yicha filtrlanmaydi (admin "Kategoriyalar" daraxti buni ishlatadi —
-    // Odoo'da vaqtincha yashirilgan, lekin baribir "approved" mahsulotni ham
-    // ko'rsatishi kerak, faqat belgilab — masalan chizib — ko'rsatish uchun,
-    // ochiq mijoz katalogidan farqli o'laroq mutlaqo yo'q qilib yubormasdan).
+    // "Mahsulotlar" (kategoriya daraxti) sahifasi uchun — GetProducts'ning
+    // aynan o'zi, faqat IsPublishedInOdoo bo'yicha filtrlanmaydi (Odoo'da
+    // vaqtincha yashirilgan, lekin baribir Online mahsulotni ham ko'rsatishi
+    // kerak, faqat belgilab — masalan chizib — ko'rsatish uchun, ochiq mijoz
+    // katalogidan farqli o'laroq mutlaqo yo'q qilib yubormasdan).
     [RequireSection("products")]
     [HttpGet("admin-list")]
     public async Task<IActionResult> GetProductsForAdminList([FromQuery] int page = 1, [FromQuery] int limit = 50)
@@ -105,7 +105,7 @@ public class ProductsController : ControllerBase
         page = Math.Max(page, 1);
         limit = Math.Clamp(limit, 1, 200);
 
-        var query = _db.Products.Where(p => p.ApprovalStatus == "approved").OrderBy(p => p.Id);
+        var query = _db.Products.Where(p => p.IsOnline).OrderBy(p => p.Id);
         var total = await query.CountAsync();
         var raw = await query
             .Skip((page - 1) * limit)
@@ -166,7 +166,7 @@ public class ProductsController : ControllerBase
         var p = await _db.Products
             .Include(p => p.Images)
             .Include(p => p.Specifications)
-            .FirstOrDefaultAsync(p => p.Id == id && p.ApprovalStatus == "approved" && p.IsPublishedInOdoo);
+            .FirstOrDefaultAsync(p => p.Id == id && p.IsOnline && p.IsPublishedInOdoo);
 
         if (p == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
@@ -219,15 +219,30 @@ public class ProductsController : ControllerBase
         return Ok(await _categoryService.GetCategoryOptionsAsync());
     }
 
-    // Odoo'dan yangi kelgan, admin hali tasdiqlamagan mahsulotlar ro'yxati —
-    // ochiq katalogda (GET /api/Products) ko'rinmaydi, faqat shu yerda ko'rinadi.
+    // "Yangi mahsulotlar" sahifasi uchun — BARCHA mahsulotlar (Online ham,
+    // Offline ham), sahifalab. Tepadagi Online/Offline filter shu yerdan
+    // ("online" parametri) ishlaydi. 2026-09-12'gacha faqat "pending"
+    // (hali ko'rib chiqilmagan) mahsulotlarni qaytarardi va sahifalanmasdi —
+    // endi umumiy boshqaruv ro'yxatiga aylantirildi (Tasdiqlash/Rad etish
+    // o'rniga Online/Offill tugmasi bilan).
     [RequireSection("products")]
     [HttpGet("pending")]
-    public async Task<IActionResult> GetPendingProducts()
+    public async Task<IActionResult> GetPendingProducts([FromQuery] bool? online = null, [FromQuery] int page = 1, [FromQuery] int limit = 50)
     {
-        var raw = await _db.Products
-            .Where(p => p.ApprovalStatus == "pending")
-            .OrderByDescending(p => p.CreatedAt)
+        page = Math.Max(page, 1);
+        limit = Math.Clamp(limit, 1, 100);
+
+        var query = _db.Products.AsQueryable();
+        if (online.HasValue)
+        {
+            query = query.Where(p => p.IsOnline == online.Value);
+        }
+        query = query.OrderByDescending(p => p.CreatedAt);
+
+        var total = await query.CountAsync();
+        var raw = await query
+            .Skip((page - 1) * limit)
+            .Take(limit)
             .Select(p => new
             {
                 p.Id,
@@ -240,6 +255,7 @@ public class ProductsController : ControllerBase
                 p.SubcategorySlug,
                 p.Brand,
                 p.InStock,
+                p.IsOnline,
                 p.IsPublishedInOdoo,
                 HasImage = p.ImageBase64 != null,
                 p.CreatedAt
@@ -259,15 +275,16 @@ public class ProductsController : ControllerBase
             subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
+            isOnline = p.IsOnline,
             // Odoo'da endi is_published=false bo'lib qolgan bo'lsa — admin buni
-            // tasdiqlay olmaydi (SetApprovalStatus shu yerda bloklaydi). Frontend
-            // buni "arxiv"/nofaol qilib ko'rsatishi uchun.
+            // Online qila olmaydi (SetOnlineStatus/UpdateProductDetails shu yerda
+            // bloklaydi). Frontend buni "arxiv"/nofaol qilib ko'rsatishi uchun.
             isPublishedInOdoo = p.IsPublishedInOdoo,
             image = p.HasImage ? "/api/products/" + p.Id + "/image" : null,
             createdAt = p.CreatedAt
         });
 
-        return Ok(items);
+        return Ok(new { items, page, total });
     }
 
     // Admin panel uchun — GetProduct'ning aynan o'zi, faqat "approved" filtri yo'q.
@@ -318,8 +335,8 @@ public class ProductsController : ControllerBase
             // hech qachon yo'qolmaydi (ProductSyncBackgroundService har doim yangilaydi).
             odooOriginalName = product.OdooOriginalName,
             odooOriginalCategoryName = product.OdooOriginalCategoryName,
-            approvalStatus = product.ApprovalStatus,
-            // "approved" bo'lsa ham, agar Odoo'da is_published o'chirilgan bo'lsa,
+            isOnline = product.IsOnline,
+            // Online bo'lsa ham, agar Odoo'da is_published o'chirilgan bo'lsa,
             // mahsulot hozir ochiq katalogda ko'RINMAYDI — admin buni shu yerdan bilib olsin.
             isPublishedInOdoo = product.IsPublishedInOdoo,
             image = product.ImageBase64 != null ? "/api/products/" + product.Id + "/image" : null,
@@ -331,32 +348,28 @@ public class ProductsController : ControllerBase
         });
     }
 
-    // Admin yangi mahsulotni tasdiqlaydi (ochiq katalogda ko'rinadi) yoki rad etadi
-    // (yashirin qoladi). Keyinchalik istalgan vaqt qayta o'zgartirish mumkin.
+    // Ro'yxatdagi tezkor Online/Offline tugmasi — to'liq tahrirlash oynasini
+    // ochmasdan mahsulotni saytda ko'rsatish/yashirish uchun. Istalgan vaqt
+    // ikki tomonga qaytariladi (eski Tasdiqlash/Rad etish'ning o'rnini bosadi).
     [RequireSection("products")]
-    [HttpPatch("{id:int}/approval")]
-    public async Task<IActionResult> SetApprovalStatus(int id, ProductApprovalDto dto)
+    [HttpPatch("{id:int}/online-status")]
+    public async Task<IActionResult> SetOnlineStatus(int id, UpdateOnlineStatusDto dto)
     {
-        if (dto.Status != "approved" && dto.Status != "rejected")
-        {
-            return BadRequest(new { message = "Holat \"approved\" yoki \"rejected\" bo'lishi kerak." });
-        }
-
         var product = await _db.Products.FindAsync(id);
         if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
-        // Odoo'da is_published=false bo'lib qolgan mahsulotni tasdiqlab (production'ga
-        // chiqarib) bo'lmaydi — chunki u hozir Odoo'ning o'zida "nashr etilmagan".
-        // Rad etish (rejected) esa doim mumkin.
-        if (dto.Status == "approved" && !product.IsPublishedInOdoo)
+        // Odoo'da is_published=false bo'lib qolgan mahsulotni Online qilib
+        // bo'lmaydi — chunki u hozir Odoo'ning o'zida "nashr etilmagan".
+        // Offline qilish esa doim mumkin.
+        if (dto.IsOnline && !product.IsPublishedInOdoo)
         {
-            return BadRequest(new { message = "Bu mahsulot hozir Odoo'da nashr etilmagan (is_published=false) — tasdiqlab bo'lmaydi." });
+            return BadRequest(new { message = "Bu mahsulot hozir Odoo'da nashr etilmagan (is_published=false) — Online qilib bo'lmaydi." });
         }
 
-        product.ApprovalStatus = dto.Status;
+        product.IsOnline = dto.IsOnline;
         await _db.SaveChangesAsync();
 
-        return Ok(new { product.Id, product.ApprovalStatus });
+        return Ok(new { product.Id, product.IsOnline });
     }
 
     // Tavsif ("Qanday ishlatiladi") — Odoo'da bu ma'lumot yo'q, faqat admin
@@ -431,9 +444,21 @@ public class ProductsController : ControllerBase
             product.SubcategorySlug = resolution.SubcategorySlug;
         }
 
+        // Tahrirlash oynasidagi Online/Offline dropdown — boshqa maydonlar bilan
+        // bir vaqtda, bitta "Saqlash" bosilganda saqlanadi (alohida ikkinchi
+        // bosqich shart emas). Xuddi SetOnlineStatus'dagi bilan bir xil tekshiruv.
+        if (dto.IsOnline.HasValue)
+        {
+            if (dto.IsOnline.Value && !product.IsPublishedInOdoo)
+            {
+                return BadRequest(new { message = "Bu mahsulot hozir Odoo'da nashr etilmagan (is_published=false) — Online qilib bo'lmaydi." });
+            }
+            product.IsOnline = dto.IsOnline.Value;
+        }
+
         await _db.SaveChangesAsync();
 
-        return Ok(new { product.Id, product.Name, product.NameUz, product.CategoryName });
+        return Ok(new { product.Id, product.Name, product.NameUz, product.CategoryName, product.IsOnline });
     }
 
     // Xususiyatlar jadvali (masalan "Akkumulyator" -> "18 V Li-Ion") — butun

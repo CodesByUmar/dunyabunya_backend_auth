@@ -57,12 +57,22 @@ public class Product
     // uchun to'g'ridan-to'g'ri solishtira oladi. Tanlanmagan bo'lsa null.
     public string? SubcategorySlug { get; set; }
 
-    // Odoo'dan YANGI kelgan mahsulot avtomatik "pending" bilan saqlanadi va admin
-    // tasdiqlamaguncha ochiq katalogda (GET /api/Products) ko'rinmaydi. Sync xizmati
-    // faqat yangi qatorlar uchun "pending" qo'yadi — mavjud mahsulotni yangilashda bu
-    // maydonga tegilmaydi, shuning uchun admin qarori keyingi sinxronizatsiyalarda
-    // yo'qolmaydi. "approved" | "pending" | "rejected".
+    // ESKI, ENDI ISHLATILMAYDI (2026-09-12'da IsOnline'ga almashtirildi) — bazada
+    // faqat tarixiy ma'lumot sifatida qoladi, kod ichida hech qayerda o'qilmaydi/
+    // yozilmaydi. O'chirib tashlash xavfsiz emas deb topilib, atayin saqlab qo'yilgan.
     public string ApprovalStatus { get; set; } = "approved";
+
+    // Admin panelda "Online/Offline" tugmasi/dropdown'i shu yerni boshqaradi —
+    // istalgan vaqt ikki tomonga (Online<->Offline) almashtiriladi (eski uch holatli
+    // ApprovalStatus'ning o'rnini bosadi). Odoo'dan YANGI kelgan mahsulot avtomatik
+    // "false" (Offline) bilan saqlanadi, admin ko'rib chiqib "Online" qilmaguncha
+    // ochiq katalogda ko'rinmaydi. Sync xizmati faqat yangi qatorlar uchun "false"
+    // qo'yadi — mavjud mahsulotni yangilashda bu maydonga tegilmaydi, shuning uchun
+    // admin qarori keyingi sinxronizatsiyalarda yo'qolmaydi.
+    //
+    // IsPublishedInOdoo'dan MUSTAQIL: ochiq katalog (GET /api/products) ikkalasi
+    // ham true bo'lgandagina mahsulotni ko'rsatadi.
+    public bool IsOnline { get; set; }
 
     // Mahsulot HOZIR Odoo'da is_published=true ro'yxatida bormi — ApprovalStatus'dan
     // MUSTAQIL. Admin tasdig'i (ApprovalStatus) doim saqlanib qoladi, bu maydon esa

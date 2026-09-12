@@ -34,7 +34,7 @@ public class SitemapController : ControllerBase
         var baseUrl = (_config["Frontend:BaseUrl"] ?? "https://demo.dunyabunya.uz").TrimEnd('/');
 
         var products = await _db.Products
-            .Where(p => p.ApprovalStatus == "approved" && p.IsPublishedInOdoo)
+            .Where(p => p.IsOnline && p.IsPublishedInOdoo)
             .Select(p => new { p.Id, p.UpdatedAt })
             .ToListAsync();
 

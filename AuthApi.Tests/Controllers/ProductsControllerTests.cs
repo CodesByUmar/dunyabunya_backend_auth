@@ -185,70 +185,106 @@ public class ProductsControllerTests
         Assert.IsType<NotFoundObjectResult>(result);
     }
 
-    // --- SetApprovalStatus ---
+    // --- SetOnlineStatus (2026-09-12'gacha SetApprovalStatus deb atalgan) ---
 
     [Fact]
-    public async Task SetApprovalStatus_ApproveWhenNotPublishedInOdoo_ReturnsBadRequestAndLeavesStatusUnchanged()
+    public async Task SetOnlineStatus_OnlineWhenNotPublishedInOdoo_ReturnsBadRequestAndLeavesUnchanged()
     {
         var product = MakeProduct();
         product.IsPublishedInOdoo = false;
         using var test = await SeedAsync(product);
         var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
-        var result = await controller.SetApprovalStatus(1, new ProductApprovalDto { Status = "approved" });
+        var result = await controller.SetOnlineStatus(1, new UpdateOnlineStatusDto { IsOnline = true });
 
         Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Equal("pending", test.Context.Products.AsNoTracking().Single(p => p.Id == 1).ApprovalStatus);
+        Assert.False(test.Context.Products.AsNoTracking().Single(p => p.Id == 1).IsOnline);
     }
 
     [Fact]
-    public async Task SetApprovalStatus_ApproveWhenPublishedInOdoo_Succeeds()
+    public async Task SetOnlineStatus_OnlineWhenPublishedInOdoo_Succeeds()
     {
         var product = MakeProduct();
         product.IsPublishedInOdoo = true;
         using var test = await SeedAsync(product);
         var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
-        var result = await controller.SetApprovalStatus(1, new ProductApprovalDto { Status = "approved" });
+        var result = await controller.SetOnlineStatus(1, new UpdateOnlineStatusDto { IsOnline = true });
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("approved", test.Context.Products.AsNoTracking().Single(p => p.Id == 1).ApprovalStatus);
+        Assert.True(test.Context.Products.AsNoTracking().Single(p => p.Id == 1).IsOnline);
     }
 
     [Fact]
-    public async Task SetApprovalStatus_RejectWhenNotPublishedInOdoo_StillSucceeds()
+    public async Task SetOnlineStatus_OfflineWhenNotPublishedInOdoo_StillSucceeds()
     {
-        // Rad etish har doim ishlashi kerak — faqat "approved" bloklanadi.
+        // Offline qilish har doim ishlashi kerak — faqat Online'ga o'tish bloklanadi.
+        var product = MakeProduct();
+        product.IsOnline = true;
+        product.IsPublishedInOdoo = false;
+        using var test = await SeedAsync(product);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
+
+        var result = await controller.SetOnlineStatus(1, new UpdateOnlineStatusDto { IsOnline = false });
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.False(test.Context.Products.AsNoTracking().Single(p => p.Id == 1).IsOnline);
+    }
+
+    [Fact]
+    public async Task SetOnlineStatus_ProductNotFound_ReturnsNotFound()
+    {
+        using var test = await SeedAsync(MakeProduct());
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
+
+        var result = await controller.SetOnlineStatus(999, new UpdateOnlineStatusDto { IsOnline = true });
+
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    // --- UpdateProductDetails'dagi IsOnline dropdown (bitta "Saqlash" bilan) ---
+
+    [Fact]
+    public async Task UpdateProductDetails_IsOnlineTrueWhenNotPublishedInOdoo_ReturnsBadRequestAndLeavesUnchanged()
+    {
         var product = MakeProduct();
         product.IsPublishedInOdoo = false;
         using var test = await SeedAsync(product);
         var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
-        var result = await controller.SetApprovalStatus(1, new ProductApprovalDto { Status = "rejected" });
-
-        Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("rejected", test.Context.Products.AsNoTracking().Single(p => p.Id == 1).ApprovalStatus);
-    }
-
-    [Fact]
-    public async Task SetApprovalStatus_InvalidStatus_ReturnsBadRequest()
-    {
-        using var test = await SeedAsync(MakeProduct());
-        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
-
-        var result = await controller.SetApprovalStatus(1, new ProductApprovalDto { Status = "unknown" });
+        var result = await controller.UpdateProductDetails(1, new UpdateProductDetailsDto { IsOnline = true });
 
         Assert.IsType<BadRequestObjectResult>(result);
+        Assert.False(test.Context.Products.AsNoTracking().Single(p => p.Id == 1).IsOnline);
     }
 
     [Fact]
-    public async Task SetApprovalStatus_ProductNotFound_ReturnsNotFound()
+    public async Task UpdateProductDetails_IsOnlineTrueWhenPublishedInOdoo_SavesTogetherWithOtherFields()
     {
-        using var test = await SeedAsync(MakeProduct());
+        var product = MakeProduct();
+        product.IsPublishedInOdoo = true;
+        using var test = await SeedAsync(product);
         var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
 
-        var result = await controller.SetApprovalStatus(999, new ProductApprovalDto { Status = "approved" });
+        var result = await controller.UpdateProductDetails(1, new UpdateProductDetailsDto { Name = "Yangi nom", IsOnline = true });
 
-        Assert.IsType<NotFoundObjectResult>(result);
+        Assert.IsType<OkObjectResult>(result);
+        var saved = test.Context.Products.AsNoTracking().Single(p => p.Id == 1);
+        Assert.Equal("Yangi nom", saved.Name);
+        Assert.True(saved.IsOnline);
+    }
+
+    [Fact]
+    public async Task UpdateProductDetails_IsOnlineNotProvided_LeavesOnlineStatusUnchanged()
+    {
+        var product = MakeProduct();
+        product.IsOnline = true;
+        using var test = await SeedAsync(product);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
+
+        var result = await controller.UpdateProductDetails(1, new UpdateProductDetailsDto { Name = "Yangi nom" });
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.True(test.Context.Products.AsNoTracking().Single(p => p.Id == 1).IsOnline);
     }
 }

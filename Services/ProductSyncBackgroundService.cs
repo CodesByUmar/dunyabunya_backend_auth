@@ -7,16 +7,17 @@ namespace AuthApi.Services;
 /// <summary>
 /// Odoo'dagi is_published=true mahsulotlarni davriy ravishda tortib, o'z bazamizga
 /// (Products) ko'chirib qo'yadi — frontend Odoo'ga jonli murojaat qilmasdan, tez
-/// javob olishi uchun. Yangi mahsulotlar "pending" holatida qo'shiladi, mavjudlari
-/// yangilanadi (narx/ombor/nom — admin tahrir qilmagan bo'lsa).
+/// javob olishi uchun. Yangi mahsulotlar "Offline" (IsOnline=false) holatida
+/// qo'shiladi, mavjudlari yangilanadi (narx/ombor/nom — admin tahrir qilmagan bo'lsa).
 ///
-/// ApprovalStatus (Pending -> Production, ya'ni admin tasdig'i) bu servis
-/// tomonidan HECH QACHON o'zgartirilmaydi — bu faqat admin qarori.
+/// IsOnline (admin Online/Offline qarori) bu servis tomonidan HECH QACHON
+/// o'zgartirilmaydi — bu faqat admin qarori (2026-09-12'gacha ApprovalStatus
+/// deb atalgan, uch holatli edi — endi oddiy ikki holatli).
 ///
-/// IsPublishedInOdoo (Production'ning ko'rinishi) esa Odoo bilan JONLI bog'liq:
-/// admin Odoo'da is_published'ni o'chirsa, tasdiqlangan mahsulot ham ochiq
-/// katalogdan darhol yashiriladi (ApprovalStatus o'zgarmasdan); qaytadan yoqsa,
-/// qayta tasdiqlashsiz o'zi qaytadan ko'rinadi (q. SyncAsync ichidagi izoh).
+/// IsPublishedInOdoo (ko'rinishning ikkinchi sharti) esa Odoo bilan JONLI bog'liq:
+/// admin Odoo'da is_published'ni o'chirsa, Online mahsulot ham ochiq katalogdan
+/// darhol yashiriladi (IsOnline o'zgarmasdan); qaytadan yoqsa, qayta Online
+/// qilmasdan o'zi qaytadan ko'rinadi (q. SyncAsync ichidagi izoh).
 /// </summary>
 public class ProductSyncBackgroundService : BackgroundService
 {
@@ -247,7 +248,7 @@ public class ProductSyncBackgroundService : BackgroundService
                     OdooOriginalCategoryName = dto.CategoryName,
                     Brand = dto.Brand,
                     InStock = dto.InStock,
-                    ApprovalStatus = "pending",
+                    IsOnline = false,
                     IsPublishedInOdoo = true
                 });
                 added++;
@@ -255,16 +256,16 @@ public class ProductSyncBackgroundService : BackgroundService
         }
 
         // MUHIM (arxitektura qarori, 2 bosqichda ishlaydi):
-        // 1) Odoo <-> Pending: is_published yangi mahsulotni "pending" qilib
-        //    qo'shadi, xolos. Pending -> Production o'tishi FAQAT admin qarori —
-        //    ApprovalStatus'ga sync HECH QACHON tegmaydi (admin tasdig'i abadiy
-        //    saqlanadi, Odoo uni "pending"ga qaytarib qo'ya olmaydi).
-        // 2) Production <-> ko'rinish: admin tasdiqlagan mahsulot Odoo'da
+        // 1) Odoo <-> Offline/Online: is_published yangi mahsulotni "Offline"
+        //    (IsOnline=false) qilib qo'shadi, xolos. Offline -> Online o'tishi
+        //    FAQAT admin qarori — IsOnline'ga sync HECH QACHON tegmaydi (admin
+        //    qarori abadiy saqlanadi, Odoo uni qaytadan Offline qilib qo'ya olmaydi).
+        // 2) Online <-> ko'rinish: admin Online qilgan mahsulot Odoo'da
         //    is_published=false qilinsa, IsPublishedInOdoo=false bo'ladi va
         //    mahsulot ochiq katalogdan (GET /api/products) DARHOL yashiriladi —
-        //    lekin ApprovalStatus="approved" bo'lib qolaveradi. Admin Odoo'da
-        //    qaytadan is_published=true qilsa, mahsulot QAYTA TASDIQLASHSIZ,
-        //    o'zi qaytadan ko'rinadi (yuqoridagi tsiklda IsPublishedInOdoo=true
+        //    lekin IsOnline=true bo'lib qolaveradi. Admin Odoo'da qaytadan
+        //    is_published=true qilsa, mahsulot QAYTA ONLINE QILISHSIZ, o'zi
+        //    qaytadan ko'rinadi (yuqoridagi tsiklda IsPublishedInOdoo=true
         //    qaytariladi).
         var freshIds = fresh.Select(p => p.OdooProductId).ToHashSet();
         foreach (var p in existing)
