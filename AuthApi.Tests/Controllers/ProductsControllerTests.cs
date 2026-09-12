@@ -188,22 +188,10 @@ public class ProductsControllerTests
     // --- SetOnlineStatus (2026-09-12'gacha SetApprovalStatus deb atalgan) ---
 
     [Fact]
-    public async Task SetOnlineStatus_OnlineWhenNotPublishedInOdoo_ReturnsBadRequestAndLeavesUnchanged()
+    public async Task SetOnlineStatus_OnlineIsAlwaysBlocked_RegardlessOfOdooPublishState()
     {
-        var product = MakeProduct();
-        product.IsPublishedInOdoo = false;
-        using var test = await SeedAsync(product);
-        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
-
-        var result = await controller.SetOnlineStatus(1, new UpdateOnlineStatusDto { IsOnline = true });
-
-        Assert.IsType<BadRequestObjectResult>(result);
-        Assert.False(test.Context.Products.AsNoTracking().Single(p => p.Id == 1).IsOnline);
-    }
-
-    [Fact]
-    public async Task SetOnlineStatus_OnlineWhenPublishedInOdoo_Succeeds()
-    {
+        // Tezkor tugma orqali Online qilib bo'lmaydi — buni faqat tahrirlash
+        // oynasi (UpdateProductDetails) qila oladi. Bu — Odoo holatidan mustaqil.
         var product = MakeProduct();
         product.IsPublishedInOdoo = true;
         using var test = await SeedAsync(product);
@@ -211,8 +199,8 @@ public class ProductsControllerTests
 
         var result = await controller.SetOnlineStatus(1, new UpdateOnlineStatusDto { IsOnline = true });
 
-        Assert.IsType<OkObjectResult>(result);
-        Assert.True(test.Context.Products.AsNoTracking().Single(p => p.Id == 1).IsOnline);
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.False(test.Context.Products.AsNoTracking().Single(p => p.Id == 1).IsOnline);
     }
 
     [Fact]

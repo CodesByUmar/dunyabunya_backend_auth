@@ -348,9 +348,13 @@ public class ProductsController : ControllerBase
         });
     }
 
-    // Ro'yxatdagi tezkor Online/Offline tugmasi — to'liq tahrirlash oynasini
-    // ochmasdan mahsulotni saytda ko'rsatish/yashirish uchun. Istalgan vaqt
-    // ikki tomonga qaytariladi (eski Tasdiqlash/Rad etish'ning o'rnini bosadi).
+    // Ro'yxatdagi tezkor tugma — FAQAT Offline qilish uchun (to'liq tahrirlash
+    // oynasini ochmasdan mahsulotni saytdan yashirish). Online qilish esa
+    // ATAYIN shu yerdan mumkin emas — admin avval "Tahrirlash" oynasida
+    // ma'lumotlarini (nomi, tavsifi va h.k.) to'ldirib, o'sha yerdan (Saqlash
+    // bilan birga) Online qilishi kerak (q. UpdateProductDetails). Bu —
+    // ma'lumotlari to'ldirilmagan "yalang'och" mahsulot tasodifan tezkor
+    // tugma bilan saytga chiqib ketmasligi uchun.
     [RequireSection("products")]
     [HttpPatch("{id:int}/online-status")]
     public async Task<IActionResult> SetOnlineStatus(int id, UpdateOnlineStatusDto dto)
@@ -358,15 +362,12 @@ public class ProductsController : ControllerBase
         var product = await _db.Products.FindAsync(id);
         if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
 
-        // Odoo'da is_published=false bo'lib qolgan mahsulotni Online qilib
-        // bo'lmaydi — chunki u hozir Odoo'ning o'zida "nashr etilmagan".
-        // Offline qilish esa doim mumkin.
-        if (dto.IsOnline && !product.IsPublishedInOdoo)
+        if (dto.IsOnline)
         {
-            return BadRequest(new { message = "Bu mahsulot hozir Odoo'da nashr etilmagan (is_published=false) — Online qilib bo'lmaydi." });
+            return BadRequest(new { message = "Mahsulotni Online qilishdan oldin uni tahrirlashingiz kerak — \"Tahrirlash\" oynasini oching, ma'lumotlarini to'ldirib, o'sha yerdan Online qiling." });
         }
 
-        product.IsOnline = dto.IsOnline;
+        product.IsOnline = false;
         await _db.SaveChangesAsync();
 
         return Ok(new { product.Id, product.IsOnline });
