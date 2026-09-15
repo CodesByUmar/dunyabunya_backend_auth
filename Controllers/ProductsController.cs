@@ -4,6 +4,9 @@ using AuthApi.Models;
 using AuthApi.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AuthApi.Controllers;
 
@@ -24,14 +27,23 @@ public class ProductsController : ControllerBase
 {
     private const long MaxImageBytes = 5 * 1024 * 1024; // 5 MB
     private const int MaxGalleryImages = 8;
+    private static readonly TimeSpan OdooInfoCacheDuration = TimeSpan.FromSeconds(60);
 
     private readonly AppDbContext _db;
     private readonly IProductCategoryService _categoryService;
+    private readonly IOdooProductService? _odooProductService;
+    private readonly IMemoryCache? _cache;
+    private readonly ILogger<ProductsController> _logger;
 
-    public ProductsController(AppDbContext db, IProductCategoryService categoryService)
+    public ProductsController(AppDbContext db, IProductCategoryService categoryService,
+        IOdooProductService? odooProductService = null, IMemoryCache? cache = null,
+        ILogger<ProductsController>? logger = null)
     {
         _db = db;
         _categoryService = categoryService;
+        _odooProductService = odooProductService;
+        _cache = cache;
+        _logger = logger ?? NullLogger<ProductsController>.Instance;
     }
 
     [HttpGet]
@@ -460,6 +472,72 @@ public class ProductsController : ControllerBase
         await _db.SaveChangesAsync();
 
         return Ok(new { product.Id, product.Name, product.NameUz, product.CategoryName, product.IsOnline });
+    }
+
+    // GIBRID yechim (2026-09-15): admin tahrirlash oynasi uchun — mahsulotning
+    // Odoo'dagi HOZIRGI (jonli) holati, OdooProductId bo'yicha jonli so'rov. Nega kerak:
+    // bazadagi Name tahrir qilingan bo'lsa yoki Odoo'da nom o'zgargan bo'lsa, admin
+    // "bu bizning qaysi mahsulot, Odoo'da endi nima deb ataladi?" deb qolmasligi uchun.
+    // MUHIM qoidalar:
+    // 1) Faqat ADMIN (RequireSection) — klient sayti bu endpointni UMUMAN ishlatmaydi
+    //    (katalog baribir bazadan tez o'qiydi); Odoochilarga ham shart emas (ularning
+    //    o'z interfeysida nomlar allaqachon bor).
+    // 2) BITTA mahsulot — ro'yxat uchun hech qachon ishlatilmasin (N+1 yuk).
+    // 3) 60 soniyalik cache — admin bir mahsulotni tez-tez ochsa, Odoo bir marta
+    //    so'raladi (Categories/Translations keshiga o'xshash naqsh).
+    // 4) Odoo uzilgan/o'chgan bo'lsa — 503 qaytadi; paneldagi saqlangan ma'lumot
+    //    (odooOriginalName va h.k.) joyida qolaveradi, hech narsa buzilmaydi.
+    [RequireSection("products")]
+    [HttpGet("{id:int}/odoo-info")]
+    public async Task<IActionResult> GetOdooInfo(int id)
+    {
+        var product = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
+        if (product == null) return NotFound(new { message = "Mahsulot topilmadi." });
+
+        if (_odooProductService == null || _cache == null)
+        {
+            return Problem("Odoo integratsiyasi sozlanmagan.", statusCode: 503);
+        }
+
+        var cacheKey = $"odoo-info:{product.OdooProductId}";
+        if (_cache.TryGetValue(cacheKey, out OdooCurrentProductInfo? cached) && cached != null)
+        {
+            return Ok(new
+            {
+                cachedFrom = "cache",
+                odoo = cached
+            });
+        }
+
+        OdooCurrentProductInfo? info;
+        try
+        {
+            info = await _odooProductService.GetProductInfoByIdAsync(product.OdooProductId);
+        }
+        catch (Exception ex)
+        {
+            // Odoo uzilgan — bu endpoint xatosi paneldagi boshqa ishlarga xalaqit bermasin.
+            _logger.LogWarning(ex, "Odoo'dan mahsulot {ProductId} (OdooId {OdooProductId}) jonli olib bo'lmadi.", id, product.OdooProductId);
+            return Problem($"Odoo'ga ulanib bo'lmadi — keyinroq qayta urinib ko'ring.", statusCode: 503);
+        }
+
+        if (info == null)
+        {
+            return NotFound(new { message = "Mahsulot Odoo'da topilmadi (o'chirilgan bo'lishi mumkin)." });
+        }
+
+        _cache.Set(cacheKey, info, OdooInfoCacheDuration);
+
+        return Ok(new
+        {
+            cachedFrom = "odoo",
+            odoo = info,
+            // Qulaylik uchun mahsulotning bazadagi nomlari ham qaytadi — frontend
+            // "Marketplace: X / Odoo'da hozir: Y" solishtiruvini bitta javobdan chizadi.
+            marketplaceName = product.Name,
+            marketplaceNameUz = product.NameUz,
+            odooOriginalName = product.OdooOriginalName
+        });
     }
 
     // Xususiyatlar jadvali (masalan "Akkumulyator" -> "18 V Li-Ion") — butun

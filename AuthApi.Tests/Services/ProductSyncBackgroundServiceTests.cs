@@ -20,6 +20,10 @@ public class ProductSyncBackgroundServiceTests
     {
         public List<OdooProductDto> Products { get; set; } = new();
         public Task<List<OdooProductDto>> GetPublishedProductsAsync() => Task.FromResult(Products);
+
+        // Sync testlari uchun ishlatilmaydi (sync faqat ro'yxatni oladi) —
+        // interfeys kengaygani uchun qo'shildi.
+        public Task<OdooCurrentProductInfo?> GetProductInfoByIdAsync(int odooProductId) => Task.FromResult<OdooCurrentProductInfo?>(null);
     }
 
     private sealed class NoOpHttpClientFactory : IHttpClientFactory

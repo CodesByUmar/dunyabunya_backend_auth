@@ -4,6 +4,7 @@ using AuthApi.Services;
 using AuthApi.Tests.Helpers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
 namespace AuthApi.Tests.Controllers;
@@ -274,5 +275,121 @@ public class ProductsControllerTests
 
         Assert.IsType<OkObjectResult>(result);
         Assert.True(test.Context.Products.AsNoTracking().Single(p => p.Id == 1).IsOnline);
+    }
+
+    // --- GetOdooInfo (gibrid yechim: ID bo'yicha jonli Odoo tekshiruvi) ---
+
+    private sealed class FakeOdooProductService : IOdooProductService
+    {
+        public OdooCurrentProductInfo? InfoToReturn { get; set; }
+        public Exception? ExceptionToThrow { get; set; }
+        public int CallCount { get; private set; }
+
+        public Task<List<OdooProductDto>> GetPublishedProductsAsync() => Task.FromResult(new List<OdooProductDto>());
+
+        public Task<OdooCurrentProductInfo?> GetProductInfoByIdAsync(int odooProductId)
+        {
+            CallCount++;
+            if (ExceptionToThrow != null) throw ExceptionToThrow;
+            return Task.FromResult(InfoToReturn);
+        }
+    }
+
+    private static ProductsController CreateController(TestDatabase test, FakeOdooProductService? odoo = null) =>
+        new(test.Context, new ProductCategoryService(test.Context), odoo, new MemoryCache(new MemoryCacheOptions()));
+
+    private static OdooCurrentProductInfo MakeOdooInfo(int odooProductId = 1, string name = "Odoo'dagi hozirgi nom") =>
+        new(odooProductId, OdooTemplateId: odooProductId * 10, name, DefaultCode: "0001", Barcode: null,
+            Price: 1500, Cost: 1000, CategoryName: "Электрика", Brand: "AVR", InStock: true, IsPublishedInOdoo: true);
+
+    [Fact]
+    public async Task GetOdooInfo_ProductNotFoundLocally_ReturnsNotFound()
+    {
+        using var test = await SeedAsync(MakeProduct());
+        // Odoo servisiz ham — lokal qator yo'qligi birinchi tekshiriladi (404).
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
+
+        var result = await controller.GetOdooInfo(999);
+
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetOdooInfo_OdooIntegrationMissing_Returns503()
+    {
+        using var test = await SeedAsync(MakeProduct());
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
+
+        var result = await controller.GetOdooInfo(1);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(503, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetOdooInfo_Success_ReturnsLiveInfoWithMarketplaceNames()
+    {
+        var product = MakeProduct();
+        product.OdooProductId = 42;
+        product.OdooOriginalName = "Birinchi kelgan nom";
+        using var test = await SeedAsync(product);
+        var odoo = new FakeOdooProductService { InfoToReturn = MakeOdooInfo(odooProductId: 42) };
+        var controller = CreateController(test, odoo);
+
+        var result = await controller.GetOdooInfo(1);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var payload = ok.Value;
+        Assert.NotNull(payload);
+        var cachedFrom = (string?)payload!.GetType().GetProperty("cachedFrom")?.GetValue(payload);
+        Assert.Equal("odoo", cachedFrom);
+        var odooInfo = (OdooCurrentProductInfo?)payload.GetType().GetProperty("odoo")?.GetValue(payload);
+        Assert.NotNull(odooInfo);
+        Assert.Equal("Odoo'dagi hozirgi nom", odooInfo!.Name);
+        Assert.Equal("Test mahsulot", payload.GetType().GetProperty("marketplaceName")?.GetValue(payload));
+        Assert.Equal("Birinchi kelgan nom", payload.GetType().GetProperty("odooOriginalName")?.GetValue(payload));
+        Assert.Equal(1, odoo.CallCount); // aynan bitta jonli so'rov ketdi
+    }
+
+    [Fact]
+    public async Task GetOdooInfo_SecondCallWithinCacheWindow_HitsOdooOnlyOnce()
+    {
+        using var test = await SeedAsync(MakeProduct());
+        var odoo = new FakeOdooProductService { InfoToReturn = MakeOdooInfo() };
+        var controller = CreateController(test, odoo);
+
+        var first = await controller.GetOdooInfo(1);
+        var second = await controller.GetOdooInfo(1);
+
+        Assert.Equal(1, odoo.CallCount); // ikkinchi chaqiruv cache'dan
+        var firstPayload = Assert.IsType<OkObjectResult>(first).Value!;
+        var secondPayload = Assert.IsType<OkObjectResult>(second).Value!;
+        Assert.Equal("odoo", (string?)firstPayload.GetType().GetProperty("cachedFrom")?.GetValue(firstPayload));
+        Assert.Equal("cache", (string?)secondPayload.GetType().GetProperty("cachedFrom")?.GetValue(secondPayload));
+    }
+
+    [Fact]
+    public async Task GetOdooInfo_OdooThrows_Returns503()
+    {
+        using var test = await SeedAsync(MakeProduct());
+        var odoo = new FakeOdooProductService { ExceptionToThrow = new InvalidOperationException("Odoo down") };
+        var controller = CreateController(test, odoo);
+
+        var result = await controller.GetOdooInfo(1);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(503, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetOdooInfo_ProductDeletedInOdoo_ReturnsNotFound()
+    {
+        using var test = await SeedAsync(MakeProduct());
+        var odoo = new FakeOdooProductService { InfoToReturn = null }; // Odoo'da yo'q
+        var controller = CreateController(test, odoo);
+
+        var result = await controller.GetOdooInfo(1);
+
+        Assert.IsType<NotFoundObjectResult>(result);
     }
 }

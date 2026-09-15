@@ -117,6 +117,75 @@ public class OdooProductService : IOdooProductService
         return result;
     }
 
+    // GIBRID yechimning jonli qismi (2026-09-15): bitta mahsulotni OdooProductId
+    // bo'yicha jonli so'rov. GetPublishedProductsAsync'dan FARQI: is_published filtri
+    // YO'Q — admin Odoo'da yashirib qo'ygan mahsulotni ham tekshirish kerak bo'ladi
+    // ("bu ID hali Odoo'da bormi, noma deb ataladi?" degan savolga to'liq javob).
+    // Bir yozuvlik engil so'rov (limit=1) — faqat admin detali oynasi uchun,
+    // ro'yxatlar uchun hech qachon ishlatilmasin (N+1).
+    public async Task<OdooCurrentProductInfo?> GetProductInfoByIdAsync(int odooProductId)
+    {
+        var db = _config["Odoo:Database"];
+        var username = _config["Odoo:Username"];
+        var apiKey = _config["Odoo:ApiKeyOutbound"];
+
+        if (string.IsNullOrEmpty(db) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(apiKey))
+        {
+            _logger.LogWarning("Odoo sozlamalari to'liq emas — mahsulot {OdooProductId} jonli tekshirilmadi.", odooProductId);
+            return null;
+        }
+
+        var uid = await AuthenticateAsync(db, username, apiKey);
+
+        var variants = await CallAsync("object", "execute_kw", new object[]
+        {
+            db, uid, apiKey, "product.product", "search_read",
+            new object[] { new object[] { new object[] { "id", "=", odooProductId } } },
+            new Dictionary<string, object>
+            {
+                ["fields"] = new[] { "id", "display_name", "default_code", "barcode", "standard_price", "categ_id", "product_tmpl_id", "qty_available", "is_published" },
+                ["limit"] = 1
+            }
+        });
+
+        var list = variants.EnumerateArray().ToList();
+        if (list.Count == 0) return null; // Odoo'da yo'q — o'chirilgan bo'lishi mumkin
+        var v = list[0];
+
+        var templateId = v.GetProperty("product_tmpl_id")[0].GetInt32();
+
+        var priceByVariantId = await GetWebsitePricesAsync(db, uid, apiKey, new[] { odooProductId });
+        priceByVariantId.TryGetValue(odooProductId, out var price);
+
+        var brandByTemplateId = await GetBrandsByTemplateAsync(db, uid, apiKey, new[] { templateId });
+        brandByTemplateId.TryGetValue(templateId, out var brand);
+
+        string? categoryName = null;
+        if (v.TryGetProperty("categ_id", out var categ) && categ.ValueKind == JsonValueKind.Array)
+        {
+            var arr = categ.EnumerateArray().ToList();
+            if (arr.Count > 1) categoryName = arr[1].GetString();
+        }
+
+        var qtyAvailable = v.TryGetProperty("qty_available", out var qty) && qty.ValueKind == JsonValueKind.Number
+            ? qty.GetDouble()
+            : 0;
+
+        return new OdooCurrentProductInfo(
+            OdooProductId: odooProductId,
+            OdooTemplateId: templateId,
+            Name: CleanDisplayName(v.GetProperty("display_name").GetString()),
+            DefaultCode: GetStringOrNull(v, "default_code"),
+            Barcode: GetStringOrNull(v, "barcode"),
+            Price: price,
+            Cost: (decimal)v.GetProperty("standard_price").GetDouble(),
+            CategoryName: categoryName,
+            Brand: brand,
+            InStock: qtyAvailable > 0,
+            IsPublishedInOdoo: v.TryGetProperty("is_published", out var pub) && pub.ValueKind == JsonValueKind.True
+        );
+    }
+
     private async Task<Dictionary<int, decimal>> GetWebsitePricesAsync(string db, int uid, string apiKey, int[] variantIds)
     {
         var prices = new Dictionary<int, decimal>();
