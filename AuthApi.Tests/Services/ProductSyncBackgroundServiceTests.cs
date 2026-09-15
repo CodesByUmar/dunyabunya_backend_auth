@@ -99,6 +99,7 @@ public class ProductSyncBackgroundServiceTests
             OdooProductId = 100,
             Name = "Admin tahriri",
             NameOverridden = true,
+            OdooOriginalName = "Birinchi nom",
             IsOnline = true,
             IsPublishedInOdoo = true
         });
@@ -109,7 +110,31 @@ public class ProductSyncBackgroundServiceTests
 
         var product = test.Context.Products.AsNoTracking().Single(p => p.OdooProductId == 100);
         Assert.Equal("Admin tahriri", product.Name); // o'zgarmagan
-        Assert.Equal("Odoo'dagi nom", product.OdooOriginalName); // orqa fonda saqlangan
+        Assert.Equal("Birinchi nom", product.OdooOriginalName); // tarixiy nom — sync tegmaydi
+    }
+
+    [Fact]
+    public async Task SyncAsync_OdooNameChanged_KeepsHistoricalOriginalName()
+    {
+        var (service, test, odoo) = CreateService();
+        using var _ = test;
+        test.Context.Products.Add(new Product
+        {
+            OdooProductId = 100,
+            Name = "Eski Odoo nomi",
+            OdooOriginalName = "Birinchi kelgan nom",
+            IsOnline = true,
+            IsPublishedInOdoo = true
+        });
+        await test.Context.SaveChangesAsync();
+
+        // Odoo'da display_name o'zgardi
+        odoo.Products = [MakeDto(100, name: "Yangi Odoo nomi")];
+        await service.SyncAsync(CancellationToken.None);
+
+        var product = test.Context.Products.AsNoTracking().Single(p => p.OdooProductId == 100);
+        Assert.Equal("Yangi Odoo nomi", product.Name); // hozirgi nom yangilanadi
+        Assert.Equal("Birinchi kelgan nom", product.OdooOriginalName); // tarixiy nom O'ZGARMAYDI
     }
 
     [Fact]

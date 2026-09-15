@@ -212,8 +212,11 @@ public class ProductSyncBackgroundService : BackgroundService
                 // CategoryNameOverridden), Odoo'dan kelgan qiymat bu maydonlarga
                 // endi tegmaydi — admin tahriri doim ustun.
                 if (!product.NameOverridden) product.Name = dto.Name;
-                // Asl Odoo qiymati — admin tahriridan MUSTAQIL, har doim yangilanadi.
-                product.OdooOriginalName = dto.Name;
+                // OdooOriginalName'ga TEGILMAYDI — bu mahsulot BIRINCHI BOR
+                // qo'shilgandagi (tarixiy) nom, keyin hech qachon o'zgarmasligi
+                // kerak (2026-09-15 qarori). Odoo'dagi hozirgi nom esa yuqoridagi
+                // Name maydoniga yoziladi. Faqat yangi qator ADD qilinayotganda
+                // (pastroqdagi else shoxida) yoziladi.
                 product.DefaultCode = dto.DefaultCode;
                 product.Barcode = dto.Barcode;
                 product.Price = dto.Price;
@@ -244,6 +247,8 @@ public class ProductSyncBackgroundService : BackgroundService
                     Price = dto.Price,
                     Cost = dto.Cost,
                     CategoryName = dto.CategoryName,
+                    // Tarixiy "birinchi nom" — shu yerdagina yoziladi, keyin
+                    // sync uni hech qachon yangilamaydi (q. yuqoridagi izoh).
                     OdooOriginalName = dto.Name,
                     OdooOriginalCategoryName = dto.CategoryName,
                     Brand = dto.Brand,
