@@ -643,6 +643,9 @@ namespace AuthApi.Migrations
                     b.Property<int>("ReviewCount")
                         .HasColumnType("integer");
 
+                    b.Property<int>("StockQuantity")
+                        .HasColumnType("integer");
+
                     b.Property<string>("SubcategorySlug")
                         .HasColumnType("text");
 

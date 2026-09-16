@@ -10,7 +10,11 @@ public record OdooProductDto(
     decimal Cost,
     string? CategoryName,
     string? Brand,
-    bool InStock
+    bool InStock,
+    // Odoo'dagi HAQIQIY ombordagi son (qty_available) — faqat ADMIN uchun
+    // (ProductsController'da mijozlarga ochiq endpointlarga chiqarilmaydi,
+    // faqat InStock bool sifatida ko'rinadi). 2026-09-16.
+    int StockQuantity
 );
 
 /// <summary>
@@ -29,6 +33,7 @@ public record OdooCurrentProductInfo(
     string? CategoryName,
     string? Brand,
     bool InStock,
+    int StockQuantity,
     bool IsPublishedInOdoo
 );
 

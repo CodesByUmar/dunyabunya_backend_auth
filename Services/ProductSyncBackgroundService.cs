@@ -225,6 +225,7 @@ public class ProductSyncBackgroundService : BackgroundService
                 product.OdooOriginalCategoryName = dto.CategoryName;
                 product.Brand = dto.Brand;
                 product.InStock = dto.InStock;
+                product.StockQuantity = dto.StockQuantity;
                 // Odoo'da hozir ham nashr etilgan ekan — darhol (kechiktirmasdan)
                 // ko'rinadigan qilamiz, agar avval vaqtincha yashiringan bo'lsa ham.
                 product.IsPublishedInOdoo = true;
@@ -253,6 +254,7 @@ public class ProductSyncBackgroundService : BackgroundService
                     OdooOriginalCategoryName = dto.CategoryName,
                     Brand = dto.Brand,
                     InStock = dto.InStock,
+                    StockQuantity = dto.StockQuantity,
                     IsOnline = false,
                     IsPublishedInOdoo = true
                 });

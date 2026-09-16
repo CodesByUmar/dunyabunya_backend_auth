@@ -300,7 +300,7 @@ public class ProductsControllerTests
 
     private static OdooCurrentProductInfo MakeOdooInfo(int odooProductId = 1, string name = "Odoo'dagi hozirgi nom") =>
         new(odooProductId, OdooTemplateId: odooProductId * 10, name, DefaultCode: "0001", Barcode: null,
-            Price: 1500, Cost: 1000, CategoryName: "Электрика", Brand: "AVR", InStock: true, IsPublishedInOdoo: true);
+            Price: 1500, Cost: 1000, CategoryName: "Электрика", Brand: "AVR", InStock: true, StockQuantity: 12, IsPublishedInOdoo: true);
 
     [Fact]
     public async Task GetOdooInfo_ProductNotFoundLocally_ReturnsNotFound()

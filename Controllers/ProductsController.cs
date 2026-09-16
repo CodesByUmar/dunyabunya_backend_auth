@@ -136,6 +136,7 @@ public class ProductsController : ControllerBase
                 p.SubcategorySlug,
                 p.Brand,
                 p.InStock,
+                p.StockQuantity,
                 p.Rating,
                 p.ReviewCount,
                 p.IsPublishedInOdoo,
@@ -159,6 +160,10 @@ public class ProductsController : ControllerBase
             subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
+            // Faqat admin uchun — Odoo ombordagi HAQIQIY son (qty_available).
+            // Mijozga ochiq GetProducts/GetProduct'da bu maydon YO'Q, faqat
+            // inStock (bor/yo'q).
+            stockQuantity = p.StockQuantity,
             rating = p.Rating,
             reviewCount = p.ReviewCount,
             // false bo'lsa — mahsulot hozir ochiq (mijoz) katalogda ko'rinmayapti
@@ -267,6 +272,7 @@ public class ProductsController : ControllerBase
                 p.SubcategorySlug,
                 p.Brand,
                 p.InStock,
+                p.StockQuantity,
                 p.IsOnline,
                 p.IsPublishedInOdoo,
                 HasImage = p.ImageBase64 != null,
@@ -287,6 +293,7 @@ public class ProductsController : ControllerBase
             subcategorySlug = p.SubcategorySlug,
             brand = p.Brand,
             inStock = p.InStock,
+            stockQuantity = p.StockQuantity,
             isOnline = p.IsOnline,
             // Odoo'da endi is_published=false bo'lib qolgan bo'lsa — admin buni
             // Online qila olmaydi (SetOnlineStatus/UpdateProductDetails shu yerda
@@ -339,6 +346,7 @@ public class ProductsController : ControllerBase
             categorySubcategory = categoryLeaf,
             brand = product.Brand,
             inStock = product.InStock,
+            stockQuantity = product.StockQuantity,
             rating = product.Rating,
             reviewCount = product.ReviewCount,
             nameOverridden = product.NameOverridden,

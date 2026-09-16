@@ -52,7 +52,7 @@ public class ProductSyncBackgroundServiceTests
     }
 
     private static OdooProductDto MakeDto(int odooProductId, string name = "Mahsulot", decimal price = 1000, string? categoryName = "Hammasi / Elektrika / Test") =>
-        new(odooProductId, OdooTemplateId: odooProductId * 10, name, DefaultCode: null, Barcode: null, price, Cost: price / 2, categoryName, Brand: null, InStock: true);
+        new(odooProductId, OdooTemplateId: odooProductId * 10, name, DefaultCode: null, Barcode: null, price, Cost: price / 2, categoryName, Brand: null, InStock: true, StockQuantity: 5);
 
     [Fact]
     public async Task SyncAsync_NewOdooProduct_IsAddedAsOfflineAndPublished()

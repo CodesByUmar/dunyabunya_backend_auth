@@ -29,6 +29,12 @@ public class Product
     public string? Brand { get; set; }
     public bool InStock { get; set; }
 
+    // Odoo ombordagi HAQIQIY son (qty_available) — faqat ADMIN paneliga
+    // ko'rsatish uchun (GetProductForAdmin/admin-list/pending). Ochiq (mijozga
+    // ko'rinadigan) endpointlarga chiqarilMAYDI — u yerda faqat InStock
+    // (bor/yo'q) ishlatilaveradi, xuddi avvalgidek. 2026-09-16.
+    public int StockQuantity { get; set; }
+
     // Admin panel orqali Name/CategoryName qo'lda tahrirlangan bo'lsa true bo'ladi —
     // ProductSyncBackgroundService shundan keyin bu maydonlarga endi tegmaydi (Odoo'dan
     // kelgan qiymat bilan ustidan yozib yubormaydi). Narx (Price) admin tomonidan

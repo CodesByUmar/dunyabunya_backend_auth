@@ -110,7 +110,8 @@ public class OdooProductService : IOdooProductService
                 Cost: (decimal)v.GetProperty("standard_price").GetDouble(),
                 CategoryName: categoryName,
                 Brand: brand,
-                InStock: qtyAvailable > 0
+                InStock: qtyAvailable > 0,
+                StockQuantity: (int)qtyAvailable
             ));
         }
 
@@ -182,6 +183,7 @@ public class OdooProductService : IOdooProductService
             CategoryName: categoryName,
             Brand: brand,
             InStock: qtyAvailable > 0,
+            StockQuantity: (int)qtyAvailable,
             IsPublishedInOdoo: v.TryGetProperty("is_published", out var pub) && pub.ValueKind == JsonValueKind.True
         );
     }
