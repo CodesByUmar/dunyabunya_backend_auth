@@ -392,4 +392,52 @@ public class ProductsControllerTests
 
         Assert.IsType<NotFoundObjectResult>(result);
     }
+
+    // --- StockQuantity: mijozga ochiq javoblarda ko'rinmasligi kerak (2026-09-17) ---
+    // Bu regressiya testi — kelajakda kimdir GetProducts/GetProduct proyeksiyasini
+    // o'zgartirib, StockQuantity'ni tasodifan qo'shib qo'ymasligi uchun.
+
+    private static object? GetItemsFirst(object? okValue)
+    {
+        var itemsProp = okValue!.GetType().GetProperty("items");
+        var items = ((System.Collections.IEnumerable)itemsProp!.GetValue(okValue)!).Cast<object>().ToList();
+        return items.Count > 0 ? items[0] : null;
+    }
+
+    [Fact]
+    public async Task GetProducts_PublicList_DoesNotExposeStockQuantity()
+    {
+        var product = MakeProduct();
+        product.IsOnline = true;
+        product.IsPublishedInOdoo = true;
+        product.InStock = true;
+        product.StockQuantity = 7;
+        using var test = await SeedAsync(product);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
+
+        var result = await controller.GetProducts();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var item = GetItemsFirst(ok.Value);
+        Assert.NotNull(item);
+        Assert.Null(item!.GetType().GetProperty("stockQuantity")); // ATAYIN yo'q — mijozga chiqmasligi kerak
+        Assert.NotNull(item.GetType().GetProperty("inStock"));
+    }
+
+    [Fact]
+    public async Task GetProductsForAdminList_ExposesStockQuantity()
+    {
+        var product = MakeProduct();
+        product.IsOnline = true;
+        product.StockQuantity = 7;
+        using var test = await SeedAsync(product);
+        var controller = new ProductsController(test.Context, new ProductCategoryService(test.Context));
+
+        var result = await controller.GetProductsForAdminList();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var item = GetItemsFirst(ok.Value);
+        Assert.NotNull(item);
+        Assert.Equal(7, item!.GetType().GetProperty("stockQuantity")?.GetValue(item));
+    }
 }
