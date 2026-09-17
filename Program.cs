@@ -304,6 +304,27 @@ app.UseExceptionHandler(errorApp =>
     });
 });
 
+// Xavfsizlik HTTP header'lari — barcha javoblarga qo'shiladi. Qattiq
+// Content-Security-Policy ATAYIN yo'q (Swagger UI'ning inline script/style'larini
+// buzib qo'yardi); bu yerda faqat hech narsani buzmaydigan, keng qo'llab-
+// quvvatlanadigan header'lar bor:
+// - X-Content-Type-Options: brauzer javob turini "taxmin qilib" boshqacha
+//   ishlatib yubormasin (MIME-sniffing hujumlaridan himoya).
+// - X-Frame-Options: sayt boshqa saytning <iframe> ichiga solib qo'yilmasin
+//   (clickjacking'dan himoya).
+// - Referrer-Policy: tashqi havolalarga o'tishda to'liq URL (masalan token
+//   query parametrda bo'lsa) sizib chiqmasin.
+// - Strict-Transport-Security: brauzer keyingi safar avtomatik HTTPS'ga
+//   o'tsin (sayt allaqachon faqat HTTPS'da ishlaydi).
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+    await next();
+});
+
 // Swagger sozlama orqali boshqariladi (ASPNETCORE_ENVIRONMENT emas — bu server
 // sirlarni appsettings.Development.json'dan oladi, shuning uchun Development
 // muhitida qolishi shart). appsettings.json'da o'chirilgan (xavfsizlik/yuklama
