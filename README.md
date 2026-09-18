@@ -1,5 +1,10 @@
 # DunyaBunya — Backend (Auth + API)
 
+[![Build and test](https://github.com/dunya-bunya-team/dunyabunya_backend_auth/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/dunya-bunya-team/dunyabunya_backend_auth/actions/workflows/build-and-test.yml)
+![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-3ECF8E?logo=postgresql&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-45%20passing-brightgreen)
+
 Toshkentdagi qurilish materiallari marketpleysi **DunyaBunya** uchun yagona backend xizmati. .NET 10 / ASP.NET Core Web API asosida qurilgan, PostgreSQL (Supabase) ma'lumotlar bazasi va Odoo ERP bilan integratsiyalashgan.
 
 ## Loyiha nima qiladi
@@ -70,3 +75,13 @@ To'liq va interaktiv hujjat uchun ilovani ishga tushirib `/swagger` manziliga ki
 - **Narx va ball hisob-kitoblari serverda bajariladi** — mijoz tomonidan yuboriladigan narx/ball qiymatlariga ishonilmaydi (masalan buyurtma narxi bazadagi mahsulot narxidan olinadi, ball yechish/qo'shish atomik SQL amallar orqali, poyga holatiga yo'l qo'ymaydi).
 - **Mahsulotlar Odoo'dan fon jarayonida davriy sinxronlanadi** (`ProductSyncBackgroundService`) — frontend Odoo'ga to'g'ridan-to'g'ri murojaat qilmaydi, o'z bazamizdan tez javob oladi. Kutilmagan bo'sh natijalarga qarshi o'z-o'zini himoya qiluvchi mexanizm bor.
 - **Superuser huquqlari bo'lim-bo'lim** (`RequireSection` filtri) — masalan bitta Superuser faqat buyurtmalarni, boshqasi faqat sovg'alar bo'limini boshqarishi mumkin.
+- **Mahsulot nomi ikki xil manbadan**: `Name` (admin tahrirlashi mumkin) va `OdooOriginalName` (Odoo'dagi tarixiy, o'zgarmas birinchi nom) — bir-birining ustidan yozilmaydi.
+- **Odoo ombordagi haqiqiy son** (`StockQuantity`) faqat admin endpointlarida qaytariladi — mijozga ochiq API'da hech qachon ko'rinmaydi (faqat `bor/yo'q`).
+
+## Xavfsizlik
+
+- Login/parol endpointlari uchun sliding-window rate limiting (`AuthPolicy`) + global limiter
+- Aniq ruxsat etilgan domenlar bilan cheklangan CORS (wildcard emas)
+- Barcha javoblarda xavfsizlik header'lari: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Strict-Transport-Security`
+- Global exception handler — texnik tafsilotlar (stack trace) faqat serverning o'z logiga yoziladi, chaqiruvchiga hech qachon chiqmaydi
+- Maxfiy ma'lumotlar (parol, API kalitlar) faqat gitignored `appsettings.Development.json`da — repo tarixida hech qachon bo'lmagan
